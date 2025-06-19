@@ -1,7 +1,9 @@
-# freebox-revolution-monitoring
-Simple Freebox Revolution Monitoring with SexiGraf 
+# freebox-monitoring
+Simple Freebox Monitoring for anything able to load data in Influxdb or Graphite format.
 
-![freebox monitoring dashboard](freebox_dashboard.png)
+Forked from [freebox-revolution-monitoring](https://github.com/tsugliani/freebox-revolution-monitoring)
+
+![freebox monitoring dashboard](doc/freebox_dashboard.png)
 
 Based/Inspired by https://github.com/tuxtof/freebox-monitoring
 
@@ -30,17 +32,17 @@ Run `python freebox_monitoring.py --register [-e endpoint] [-a My_app_name -i My
 
 Once you execute this script, you will see something similar to this:
 
-![register](freebox_registration.png)
+![register](doc/freebox_registration.png)
 
 Head to your Freebox Server device.
 
-![Freebox Server Validation](seximonitor_register.jpg)
+![Freebox Server Validation](doc/seximonitor_register.jpg)
 
 Press the `>` to authorize the app registration process.
 
 You can check the saved tokens with `python freebox_monitor.py --register-status`:
 
-![register-status](freebox_registration_status.png)
+![register-status](doc/freebox_registration_status.png)
 
 If you need to re-auth you can delete the authorization credentials by removing the file `.credentials` in the directory where `freebox_monitor.py` is.
 
@@ -54,7 +56,7 @@ Once you have your `freebox_app_token`, the process to authenticate happens in 2
 
 Then execute it, to make sure it connects and displays information.
 
-![freebox monitor](freebox_monitor.png)
+![freebox monitor](doc/freebox_monitor.png)
 
 # Step 3: Stats to get and show
 
@@ -142,7 +144,7 @@ Check & edit the configuration file to make it look as follows:
   data_format = "graphite"
 ```
 
-Copy your modified `freebox_monitor.py` script to `/usr/local/freebox-revolution-monitoring/`
+Copy your modified `freebox_monitor.py` script to `/usr/local/freebox-monitoring/`
 
 Relaunch telegraf and check the logs
 
@@ -166,11 +168,11 @@ If the output is similar to this, you should be good to go and build your own da
 
 Here is a 2 day view of the download/upload stats.
 
-![dashboard 2days](freebox_2days.png)
+![dashboard 2days](doc/freebox_2days.png)
 
 Example of the xDSL graphs
 
-![xdsl_dash_12h_1](freebox_xdsl_12h_1.png)
-![xdsl_dash_12h_2](freebox_xdsl_12h_2.png)
+![xdsl_dash_12h_1](doc/freebox_xdsl_12h_1.png)
+![xdsl_dash_12h_2](doc/freebox_xdsl_12h_2.png)
 
 Enjoy !

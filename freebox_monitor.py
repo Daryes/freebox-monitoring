@@ -11,18 +11,25 @@ import argparse
 import sys
 from hashlib import sha1
 
+import socket
+
 if sys.version_info >= (3, 0):
     import configparser as configp
 else:
     import ConfigParser as configp
 
 #
-# Freebox API SDK / Docs: http://dev.freebox.fr/sdk/os/login/
+# Freebox API SDK
+# Home: https://dev.freebox.fr/sdk/server.html
+# Docs: http://dev.freebox.fr/sdk/
 #
 
-VERSION = "0.4.4"
+APP_VERSION = "0.5.0"
+APP_ID = "fr.freebox.seximonitor"
+APP_NAME = "SexiMonitor"
 
-  
+ENDPOINT = "http://mafreebox.freebox.fr/api/v3"
+
 
 def get_challenge(freebox_app_id):
     api_url = '%s/login/authorize/%s' % (ENDPOINT, freebox_app_id)
@@ -130,9 +137,6 @@ def get_switch_port_stats(headers, port):
 
 
 def get_and_print_metrics(creds, s_switch, s_ports, s_sys, s_disk):
-    #freebox_app_id = "fr.freebox.seximonitor"
-    freebox_app_id = creds['app_id']
-
     # Fetch challenge
     resp = get_challenge(creds['track_id'])
     challenge = resp['result']['challenge']
@@ -145,7 +149,7 @@ def get_and_print_metrics(creds, s_switch, s_ports, s_sys, s_disk):
     password = h.hexdigest()
 
     # Fetch session_token
-    resp = open_session(password, freebox_app_id)
+    resp = open_session(password, APP_ID)
     session_token = resp['result']['session_token']
 
     # Setup headers with the generated session_token
@@ -161,19 +165,28 @@ def get_and_print_metrics(creds, s_switch, s_ports, s_sys, s_disk):
 
     # Generic datas, same for FFTH or xDSL
     if 'result' in json_raw:
-    	my_data['bytes_down'] = json_raw['result']['bytes_down']  # total in bytes since last connection
-    	my_data['bytes_up'] = json_raw['result']['bytes_up']
+        my_data['bytes_down'] = json_raw['result']['bytes_down']  # total in bytes since last connection
+        my_data['bytes_up'] = json_raw['result']['bytes_up']
 
-    	my_data['rate_down'] = json_raw['result']['rate_down']  # current rate in byte/s
-    	my_data['rate_up'] = json_raw['result']['rate_up']
+        my_data['rate_down'] = json_raw['result']['rate_down']  # current rate in byte/s
+        my_data['rate_up'] = json_raw['result']['rate_up']
 
-    	my_data['bandwidth_down'] = json_raw['result']['bandwidth_down']  # available bw in bit/s
-    	my_data['bandwidth_up'] = json_raw['result']['bandwidth_up']
+        my_data['bandwidth_down'] = json_raw['result']['bandwidth_down']  # available bw in bit/s
+        my_data['bandwidth_up'] = json_raw['result']['bandwidth_up']
 
     if json_raw['result']['state'] == "up":
         my_data['state'] = 1
+        if 'ipv4' in json_raw['result']:
+            my_data['wan_ipv4'] = json_raw['result']['ipv4']
+            my_data['wan_ipv4_port_range_min'] = json_raw['result']['ipv4_port_range'][0]
+            my_data['wan_ipv4_port_range_max'] = json_raw['result']['ipv4_port_range'][1]
+
+        if 'ipv6' in json_raw['result']:
+            my_data['wan_ipv6'] = json_raw['result']['ipv6']
+
     else:
         my_data['state'] = 0
+
 
     # ffth for FFTH (default)
     # xdsl for xDSL
@@ -181,188 +194,183 @@ def get_and_print_metrics(creds, s_switch, s_ports, s_sys, s_disk):
 
     ###
     # FFTH specific
-    if connection_media == "ffth":
+    if connection_media == "ffth" or connection_media == "ftth":
         json_raw = get_ftth_status(headers)
+        # print( json.dumps(json_raw, indent=4, sort_keys=True) )
 
-    	if 'result' in json_raw:
-        	my_data['sfp_pwr_rx'] = json_raw['result']['sfp_pwr_rx']  # scaled by 100 (in dBm)
-	        my_data['sfp_pwr_tx'] = json_raw['result']['sfp_pwr_tx']
+        if 'result' in json_raw:
+            my_data['sfp_pwr_rx'] = json_raw['result']['sfp_pwr_rx']  # scaled by 100 (in dBm)
+            my_data['sfp_pwr_tx'] = json_raw['result']['sfp_pwr_tx']
+            my_data['sfp_alim_ok'] = 1 if json_raw['result']['sfp_alim_ok']  else 0
+            my_data['sfp_has_power_report'] = 1 if json_raw['result']['sfp_has_power_report']  else 0
+            my_data['sfp_has_signal'] = 1 if json_raw['result']['sfp_alim_ok']  else 0
+
 
     ###
     # xDSL specific
     if connection_media == "xdsl":
         json_raw = get_xdsl_status(headers)
+        # print( json.dumps(json_raw, indent=4, sort_keys=True) )
 
-    	if 'result' in json_raw:
-        	my_data['xdsl_modulation'] = json_raw['result']['status']['modulation'] + " ("+json_raw['result']['status']['protocol']+")"  # in seconds
+        if 'result' in json_raw:
+            my_data['xdsl_modulation'] = json_raw['result']['status']['modulation'] + " ("+json_raw['result']['status']['protocol']+")"
+            my_data['xdsl_uptime'] = json_raw['result']['status']['uptime']  # in seconds
+            my_data['xdsl_status_string'] = json_raw['result']['status']['status']
 
-	        my_data['xdsl_uptime'] = json_raw['result']['status']['uptime']  # in seconds
+            if json_raw['result']['status']['status'] == "down":  # unsynchronized
+                my_data['xdsl_status'] = 0
+            elif json_raw['result']['status']['status'] == "training":  # synchronizing step 1/4
+                my_data['xdsl_status'] = 1
+            elif json_raw['result']['status']['status'] == "started":  # synchronizing step 2/4
+                my_data['xdsl_status'] = 2
+            elif json_raw['result']['status']['status'] == "chan_analysis":  # synchronizing step 3/4
+                my_data['xdsl_status'] = 3
+            elif json_raw['result']['status']['status'] == "msg_exchange":  # synchronizing step 4/4
+                my_data['xdsl_status'] = 4
+            elif json_raw['result']['status']['status'] == "showtime":  # ready
+                my_data['xdsl_status'] = 5
+            elif json_raw['result']['status']['status'] == "disabled":  # disabled
+                my_data['xdsl_status'] = 6
+            else:  # unknown
+                my_data['xdsl_status'] = 999
 
-	        my_data['xdsl_status_string'] = json_raw['result']['status']['status']
-	        if json_raw['result']['status']['status'] == "down":  # unsynchronized
-	            my_data['xdsl_status'] = 0
-	        elif json_raw['result']['status']['status'] == "training":  # synchronizing step 1/4
-	            my_data['xdsl_status'] = 1
-	        elif json_raw['result']['status']['status'] == "started":  # synchronizing step 2/4
-	            my_data['xdsl_status'] = 2
-	        elif json_raw['result']['status']['status'] == "chan_analysis":  # synchronizing step 3/4
-	            my_data['xdsl_status'] = 3
-	        elif json_raw['result']['status']['status'] == "msg_exchange":  # synchronizing step 4/4
-	            my_data['xdsl_status'] = 4
-	        elif json_raw['result']['status']['status'] == "showtime":  # ready
-	            my_data['xdsl_status'] = 5
-	        elif json_raw['result']['status']['status'] == "disabled":  # disabled
-	            my_data['xdsl_status'] = 6
-	        else:  # unknown
-	            my_data['xdsl_status'] = 999
+            my_data['xdsl_down_es'] = json_raw['result']['down']['es']  # increment
+            my_data['xdsl_down_attn'] = json_raw['result']['down']['attn']  # in dB
+            my_data['xdsl_down_snr'] = json_raw['result']['down']['snr']  # in dB
+            my_data['xdsl_down_rate'] = json_raw['result']['down']['rate']  # ATM rate in kbit/s
+            my_data['xdsl_down_hec'] = json_raw['result']['down']['hec']  # increment
+            my_data['xdsl_down_crc'] = json_raw['result']['down']['crc']  # increment
+            my_data['xdsl_down_ses'] = json_raw['result']['down']['ses']  # increment
+            my_data['xdsl_down_fec'] = json_raw['result']['down']['fec']  # increment
+            my_data['xdsl_down_maxrate'] = json_raw['result']['down']['maxrate']  # ATM max rate in kbit/s
+            my_data['xdsl_down_rtx_tx'] = json_raw['result']['down']['rtx_tx']  # G.INP on/off
+            my_data['xdsl_down_rtx_c'] = json_raw['result']['down']['rtx_c']  # G.INP corrected
+            my_data['xdsl_down_rtx_uc'] = json_raw['result']['down']['rtx_uc']  # G.INP uncorrected
 
-	        if 'es' in json_raw['result']['down']: my_data['xdsl_down_es'] = json_raw['result']['down']['es']  # increment
-	        if 'attn' in json_raw['result']['down']: my_data['xdsl_down_attn'] = json_raw['result']['down']['attn']  # in dB
-	        if 'snr' in json_raw['result']['down']: my_data['xdsl_down_snr'] = json_raw['result']['down']['snr']  # in dB
-	        if 'rate' in json_raw['result']['down']: my_data['xdsl_down_rate'] = json_raw['result']['down']['rate']  # ATM rate in kbit/s
-	        if 'hec' in json_raw['result']['down']: my_data['xdsl_down_hec'] = json_raw['result']['down']['hec']  # increment
-	        if 'crc' in json_raw['result']['down']: my_data['xdsl_down_crc'] = json_raw['result']['down']['crc']  # increment
-	        if 'ses' in json_raw['result']['down']: my_data['xdsl_down_ses'] = json_raw['result']['down']['ses']  # increment
-	        if 'fec' in json_raw['result']['down']: my_data['xdsl_down_fec'] = json_raw['result']['down']['fec']  # increment
-	        if 'maxrate' in json_raw['result']['down']: my_data['xdsl_down_maxrate'] = json_raw['result']['down']['maxrate']  # ATM max rate in kbit/s
-	        if 'rtx_tx' in json_raw['result']['down']: my_data['xdsl_down_rtx_tx'] = json_raw['result']['down']['rtx_tx']  # G.INP on/off
-	        if 'rtx_c' in json_raw['result']['down']: my_data['xdsl_down_rtx_c'] = json_raw['result']['down']['rtx_c']  # G.INP corrected
-	        if 'rtx_uc' in json_raw['result']['down']: my_data['xdsl_down_rtx_uc'] = json_raw['result']['down']['rtx_uc']  # G.INP uncorrected
-	
-	        if 'es' in json_raw['result']['up']: my_data['xdsl_up_es'] = json_raw['result']['up']['es']
-	        if 'attn' in json_raw['result']['up']: my_data['xdsl_up_attn'] = json_raw['result']['up']['attn']
-	        if 'snr' in json_raw['result']['up']: my_data['xdsl_up_snr'] = json_raw['result']['up']['snr']
-	        if 'rate' in json_raw['result']['up']: my_data['xdsl_up_rate'] = json_raw['result']['up']['rate']
-	        if 'hec' in json_raw['result']['up']: my_data['xdsl_up_hec'] = json_raw['result']['up']['hec']
-	        if 'crc' in json_raw['result']['up']: my_data['xdsl_up_crc'] = json_raw['result']['up']['crc']
-	        if 'ses' in json_raw['result']['up']: my_data['xdsl_up_ses'] = json_raw['result']['up']['ses']
-	        if 'fec' in json_raw['result']['up']: my_data['xdsl_up_fec'] = json_raw['result']['up']['fec']
-	        if 'maxrate' in json_raw['result']['up']: my_data['xdsl_up_maxrate'] = json_raw['result']['up']['maxrate']
-	        if 'rtx_tx' in json_raw['result']['up']: my_data['xdsl_up_rtx_tx'] = json_raw['result']['up']['rtx_tx']
-	        if 'rtx_c' in json_raw['result']['up']: my_data['xdsl_up_rtx_c'] = json_raw['result']['up']['rtx_c']  # G.INP corrected
-	        if 'rtx_uc' in json_raw['result']['up']: my_data['xdsl_up_rtx_uc'] = json_raw['result']['up']['rtx_uc']  # G.INP uncorrected
+            my_data['xdsl_up_es'] = json_raw['result']['up']['es']
+            my_data['xdsl_up_attn'] = json_raw['result']['up']['attn']
+            my_data['xdsl_up_snr'] = json_raw['result']['up']['snr']
+            my_data['xdsl_up_rate'] = json_raw['result']['up']['rate']
+            my_data['xdsl_up_hec'] = json_raw['result']['up']['hec']
+            my_data['xdsl_up_crc'] = json_raw['result']['up']['crc']
+            my_data['xdsl_up_ses'] = json_raw['result']['up']['ses']
+            my_data['xdsl_up_fec'] = json_raw['result']['up']['fec']
+            my_data['xdsl_up_maxrate'] = json_raw['result']['up']['maxrate']
+            if 'rtx_tx' in json_raw['result']['up']:
+                my_data['xdsl_up_rtx_tx'] = json_raw['result']['up']['rtx_tx']  # G.INP on/off
+                my_data['xdsl_up_rtx_c'] = json_raw['result']['up']['rtx_c']  # G.INP corrected
+                my_data['xdsl_up_rtx_uc'] = json_raw['result']['up']['rtx_uc']  # G.INP uncorrected
+            else:
+                my_data['xdsl_up_rtx_tx'] = json_raw['result']['up']['rxmt']  # G.INP on/off
+                my_data['xdsl_up_rtx_c'] = json_raw['result']['up']['rxmt_corr']  # G.INP corrected
+                my_data['xdsl_up_rtx_uc'] = json_raw['result']['up']['rxmt_uncorr']  # G.INP uncorrected
+
 
     ##
     # General infos
     if s_sys:
         sys_json_raw = get_system_config(headers)
-    	if 'result' in sys_json_raw:
-	        if 'fan_rpm' in sys_json_raw['result']:my_data['sys_fan_rpm'] = sys_json_raw['result']['fan_rpm']  # rpm
-	        if 'temp_sw' in sys_json_raw['result']:my_data['sys_temp_sw'] = sys_json_raw['result']['temp_sw']  # Temp Switch, degree Celcius
-	        if 'uptime_val' in sys_json_raw['result']:my_data['sys_uptime'] = sys_json_raw['result']['uptime_val']  # Uptime, in seconds
-	        if 'temp_cpub' in sys_json_raw['result']:my_data['sys_temp_cpub'] = sys_json_raw['result']['temp_cpub']  # Temp CPU Broadcom, degree Celcius
-	        if 'temp_cpum' in sys_json_raw['result']:my_data['sys_temp_cpum'] = sys_json_raw['result']['temp_cpum']  # Temp CPU Marvell, degree Celcius
-	        if 'firmware_version' in sys_json_raw['result']:my_data['firmware_version'] = sys_json_raw['result']['firmware_version']  # Firmware version
+        if 'result' in sys_json_raw:
+            my_data['sys_fan_rpm'] = sys_json_raw['result']['fan_rpm']  # rpm
+            my_data['sys_temp_sw'] = sys_json_raw['result']['temp_sw']  # Temp Switch, degree Celcius
+            my_data['sys_uptime'] = sys_json_raw['result']['uptime_val'] or 0  # Uptime, in seconds
+            my_data['sys_temp_cpub'] = sys_json_raw['result']['temp_cpub']  # Temp CPU Broadcom, degree Celcius
+            my_data['sys_temp_cpum'] = sys_json_raw['result']['temp_cpum']  # Temp CPU Marvell, degree Celcius
+            my_data['firmware_version'] = sys_json_raw['result']['firmware_version']  # Firmware version
 
     ##
     # Switch status
     if s_switch:
         switch_json_raw = get_switch_status(headers)
-    	if 'result' in switch_json_raw:
-	        for i in switch_json_raw['result']:
-	            # 0 down, 1 up
-	            my_data['switch_%s_link' % i['id']] = 0 if i['link'] == "down" else 1
-	            # 0 auto, 1 10Base-T, 2 100Base-T, 3 1000Base-T
-	            # In fact the duplex is appended like 10BaseT-HD, 1000BaseT-FD, 1000BaseT-FD
-	            # So juse is an "in" because duplex isn't really usefull
-	            if "10BaseT" in i['mode']:
-	                my_data['switch_%s_mode' % i['id']] = 1
-	            elif "100BaseT" in i['mode']:
-	                my_data['switch_%s_mode' % i['id']] = 2
-	            elif "1000BaseT" in i['mode']:
-	                my_data['switch_%s_mode' % i['id']] = 3
-	            else:
-	                my_data['switch_%s_mode' % i['id']] = 0  # auto
+        if 'result' in switch_json_raw:
+            for i in switch_json_raw['result']:
+                # 0 down, 1 up
+                my_data['switch_%s_link' % i['id']] = 0 if i['link'] == "down" else 1
+                # 0 auto, 1 10Base-T, 2 100Base-T, 3 1000Base-T
+                # In fact the duplex is appended like 10BaseT-HD, 1000BaseT-FD, 1000BaseT-FD
+                # So juse is an "in" because duplex isn't really usefull
+                if "10BaseT" in i['mode']:
+                    my_data['switch_%s_mode' % i['id']] = 1
+                elif "100BaseT" in i['mode']:
+                    my_data['switch_%s_mode' % i['id']] = 2
+                elif "1000BaseT" in i['mode']:
+                    my_data['switch_%s_mode' % i['id']] = 3
+                else:
+                    my_data['switch_%s_mode' % i['id']] = 0  # auto
 
     ##
     # Switch ports status
     if s_ports:
         for i in [1, 2, 3, 4]:
             switch_port_stats = get_switch_port_stats(headers, i)
-            my_data['switch_%s_rx_bytes_rate' % i] = switch_port_stats['result']['rx_bytes_rate']  # bytes/s (?)
-            my_data['switch_%s_tx_bytes_rate' % i] = switch_port_stats['result']['tx_bytes_rate']
+            if 'result' in switch_port_stats:
+                my_data['switch_%s_rx_bytes_rate' % i] = switch_port_stats['result']['rx_bytes_rate']  # bytes/s (?)
+                my_data['switch_%s_tx_bytes_rate' % i] = switch_port_stats['result']['tx_bytes_rate']
+
 
     # Fetch internal disk stats
     if s_disk:
-        json_raw=get_internal_disk_stats(headers)
-	if 'result' in json_raw and 'partitions' in json_raw['result']:
-        	if 'total_bytes' in json_raw['result']['partitions'][0]:my_data['disk_total_bytes'] =  json_raw['result']['partitions'][0]['total_bytes']
-	        if 'used_bytes' in json_raw['result']['partitions'][0]:my_data['disk_used_bytes'] =  json_raw['result']['partitions'][0]['used_bytes']
-	        if 'temp' in json_raw['result']:my_data['disk_temp'] =  json_raw['result']['temp']
+        json_raw = get_internal_disk_stats(headers)
+        if 'result' in json_raw and 'partitions' in json_raw['result']:
+            if 'total_bytes' in json_raw['result']['partitions'][0]:
+                my_data['disk_total_bytes'] =  json_raw['result']['partitions'][0]['total_bytes']
+            if 'used_bytes'  in json_raw['result']['partitions'][0]:
+                my_data['disk_used_bytes'] =  json_raw['result']['partitions'][0]['used_bytes']
+            if 'temp' in json_raw['result']:
+                my_data['disk_temp'] =  json_raw['result']['temp']
+
 
     # Switching between outputs formats 
     if args.format == 'influxdb':
-         # Prepping Graphite Data format
+         # Prepping Influxdb Data format
          timestamp = int(time.time())* 1000000
 
          # Output the information
          for i in my_data:
-             if type(my_data[i]) == unicode:
-                 print("freebox,endpoint=%s %s=\"%s\"" % (args.Endpoint, i, my_data[i]))
+             if type(my_data[i]) == str:
+                 print("freebox %s=\"%s\"" % (i, my_data[i]))
              else:
-                 print("freebox,endpoint=%s %s=%s" % (args.Endpoint, i, my_data[i]))
+                 print("freebox %s=%s" % (i, my_data[i]))
 
     else:
-         # Prepping Graphite Data format
-         timestamp = int(time.time())
+      # Prepping Graphite Data format
+      timestamp = int(time.time())
 
-         # Output the information
-         for i in my_data:
-             print("freebox.%s %s %d" % (i, my_data[i], timestamp))
+      # Output the information
+      for i in my_data:
+          print("freebox.%s %s %d" % (i, my_data[i], timestamp))
 
 
 def get_auth():
     script_dir = os.path.dirname(os.path.realpath(__file__))
     cfg_file = os.path.join(script_dir, ".credentials")
-    ret_args={}
+
     f = configp.RawConfigParser()
     f.read(cfg_file)
 
     try:
-	_ = f.has_section(args.Endpoint)
-
-        ret_args.update(track_id= f.get(args.Endpoint, "track_id"))
-        ret_args.update(app_token= f.get(args.Endpoint, "app_token"))
-
-	if f.has_option(args.Endpoint, "app_id"):
-             ret_args.update(app_id= f.get(args.Endpoint, "app_id")) 
-	else:
-             ret_args.update(app_id= app_id) 
-
-	if f.has_option(args.Endpoint, "app_name"):
-             ret_args.update(app_name= f.get(args.Endpoint, "app_name")) 
-	else:
-             ret_args.update(app_name= app_name) 
-	if f.has_option(args.Endpoint, "device_name"):
-             ret_args.update(device_name= f.get(args.Endpoint, "device_name")) 
-	else:
-             ret_args.update(device_name= device_name)
+        _ = f.get("general", "track_id")
+        _ = f.get("general", "app_token")
     except configp.NoSectionError:
-        print("Config is not registered, auth not done.")
-	if args.register:
-             return None
-	else:
-	     exit();
+        print("Config is invalid, the auth token is missing.")
+        return None
 
-    return ret_args
+    return {'track_id': f.get('general', 'track_id'),
+            'app_token': f.get('general', 'app_token')}
 
 
 def write_auth(auth_infos):
     script_dir = os.path.dirname(os.path.realpath(__file__))
     cfg_file = os.path.join(script_dir, ".credentials")
     f = configp.RawConfigParser()
-    f.add_section(args.Endpoint)
-    f.set(args.Endpoint, "track_id", auth_infos['track_id'])
-    f.set(args.Endpoint, "app_token", auth_infos["app_token"])
-    f.set(args.Endpoint, "app_id", app_id)
-    f.set(args.Endpoint, "app_name", app_name)
-    f.set(args.Endpoint, "device_name", device_name)
-    with open(cfg_file, "ab") as authFile:
+    f.add_section("general")
+    f.set("general", "track_id", auth_infos['track_id'])
+    f.set("general", "app_token", auth_infos["app_token"])
+    with open(cfg_file, "wb") as authFile:
         f.write(authFile)
 
 
 def do_register(creds):
-    #global app_id,app_name,device_name
     if creds is not None:
         if 'track_id' in creds and 'app_token' in creds:
             print("Already registered, exiting")
@@ -371,10 +379,10 @@ def do_register(creds):
     print("Doing registration")
     headers = {'Content-type': 'application/json'}
     app_info = {
-        'app_id': app_id,
-        'app_name': app_name,
-        'app_version': VERSION,
-        'device_name': device_name
+        'app_id': APP_ID,
+        'app_name': APP_NAME,
+        'app_version': APP_VERSION,
+        'device_name': socket.gethostname()
     }
     json_payload = json.dumps(app_info)
 
@@ -402,47 +410,9 @@ def register_status(creds):
 
 # Main
 if __name__ == '__main__':
-    app_id='fr.freebox.seximonitor'
-    app_name='SexiMonitor'
-    device_name='SexiServer'
-
-    parser = argparse.ArgumentParser(add_help=False)
-    #helpgroup = parser.add_argument_group()
-    parser.add_argument("-h", "--help", action="help", help="show this help message and exit")
-    parser.add_argument('-s', '--register-status', dest='status', action='store_true', help="Get register status")
-
-    #registergroup = parser.add_mutually_exclusive_group()
+    parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--register', action='store_true', help="Register app with Freebox API")
-    #parser.add_argument('-a', '--appname', dest='appname', action='store_true', help="Register with appname")
-    #parser.add_argument('-i', '--appid', dest='appid', action='store_true', help="Register with appid")
-    #parser.add_argument('-d', '--device-name', dest='devicename', action='store_true', help="Register with device-name")
-
-    parser.add_argument('-n', '--appname',
-                        dest='app_name',
-			metavar='app_name',
-                        help="Register with app_name")
-
-    parser.add_argument('-i', '--appid',
-                        dest='app_id',
-			metavar='app_id',
-                        help="Register with app_id")
-
-    parser.add_argument('-d', '--devicename',
-                        dest='device_name',
-			metavar='device_name',
-                        help="Register with device_name")
-
-    parser.add_argument('-f', '--format',
-                        dest='format',
-			metavar='format',
-			default='graphite',
-                        help="Specify output format between graphite and influxdb")
-
-    parser.add_argument('-e', '--endpoint',
-                        dest='Endpoint',
-			metavar='endpoint',
-			default='mafreebox.freebox.fr',
-                        help="Specify endpoint name or address")
+    parser.add_argument('-s', '--register-status', dest='status', action='store_true', help="Get register status")
 
     parser.add_argument('-S', '--status-switch',
                         dest='status_switch',
@@ -459,22 +429,20 @@ if __name__ == '__main__':
                         action='store_true',
                         help="Get and show system status")
 
+    parser.add_argument('-f', '--format',
+                        dest='format',
+                        metavar='format',
+                        default='graphite',
+                        help="Specify output format between 'graphite' and 'influxdb'")
+
     parser.add_argument('-D', '--internal-disk-usage',
                         dest='disk_usage',
                         action='store_true',
                         help="Get and show internal disk usage")
+
+
     args = parser.parse_args()
 
-    if args.app_id is not None:
-      app_id=args.app_id
-
-    if args.app_name is not None:
-      app_name=args.app_name
-
-    if args.device_name is not None:
-      device_name=args.device_name
-
-    ENDPOINT="http://"+args.Endpoint+"/api/v3/"
     auth = get_auth()
 
     if args.register:
