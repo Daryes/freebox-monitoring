@@ -1,6 +1,63 @@
 ﻿# freebox-monitoring changelog
 
 
+## v0.8.0
+* modification des métriques avec changement de nom de la mesure principale, exception des metriques par défaut hors paramètre `--status-...`
+  * pour influxdb : passage de `freebox` à `freebox_<type>`
+  * pour graphite : passage de `freebox` à `freebox.<type>`
+* parametre --register-status : seul les 4 premiers caractères du token sont affichés
+* metriques lan browser : tags normalisés en lan_* pour limiter les conflits (tag "host" par exemple)
+* metriques wifi : tags normalisés en wifi_* pour limiter les conflits
+* metriques dhcp : metriques texte déplacées en tags
+* documentation : création de la liste des metriques et tags générés
+* API en https : support complet avec utilisation du certificat custom de Free Telecom. Le paramètre `--ssl-no-verify` n'est plus obligatoire.
+* register-status: affichage du chemin du fichier de configuration/credential utilisé
+* metriques wifi_station_* et diskfs_* : reorganisation de l'ordre de certains tags pour cohérence, ne devrait pas avoir d'impact.
+* tag global : le tag `api_endpoint` contient à présent l'url complete avec la version de l'api
+* metriques principales : ajout des champs config_* pour le ping, adblock, wol, sip_alg, remote et api_remote.
+* metriques switch : ajout de la metrique calculée `client_last_seen` avec en tags leur nom et adresse mac des clients connus de chaque port du switch.
+* ligne de commande :
+  * nouveau parametre : `--ssl-ca-bundle-file` permettant de redefinir le fichier de certificats CA bundle
+  * nouveau parametre : `--status-vpnsrv` pour les métriques des serveurs VPN
+  * nouveau parametre : `--status-vpnclient` pour les métriques du client VPN intégré
+
+
+## v0.7.3
+Non diffusé.  
+* correction format de sortie pour compatibilité avec influxdb v1
+* retrait de la date/heure inutile pour le format de sortie influxdb
+* ajout d'autres caractères retirés pour les valeurs de tags tels que "vendor"
+* metriques system : correction de la detection API v8+ et v8-
+* metrique sys : correction de sys_authenticated en 0 ou 1 au lieu de booleen
+* metrique wifi : correction d'erreur si utilisé lorsque le wifi de la box est désactivé
+* tag global : retrait de `hw_operator`, remplacé par `net_operator` via "--status-sys"
+* metriques wan_ipv4* et wan_ipv6* : ajout de valeurs par defaut en cas d'absence de connexion
+* metriques connection : ajout du tag `conn_media`
+* metriques lan : ajout du champ `first_activity`
+* ligne de commande :
+  * nouveau parametre : `--patch-rate-up-bytes-up` pour corriger les metriques rate_up et bytes_up cumulées avec leur équivalents *_down
+
+
+## v0.7.2
+* ajout des metriques pour le wifi
+* ligne de commande:
+  * nouveau parametre: `--status-call` pour les appels téléphoniques
+  * nouveau parametre: `--status-wifi` pour le wifi
+  * nouveau parametre: `--status-lte` pour la connexion LTE
+  * nouveau parametre: `--status-lan-browser` pour les informations sur les clients environnants
+* modification des tags "*_id" : le suffixe "_id" est retiré du nom pour chaque tag principal (id de disque, id de partition, id de reseau, ...)
+
+
+## v0.7.1
+* Mise à jour pour API v13
+  * Utilisation de tags
+  * refonte des métriques disk_* et partition_*
+  * refonte des métriques cpu_temp et fan_rpm
+* parametre `--status-disk` ajouté en alias pour `--internal-disk-usage`
+* certains tags dont sfp_vendor et lan_vendor sont nettoyés de leur caractères speciaux,  
+  et peuvent différer légèrement des informations vues par la freebox.
+
+
 ## v0.7.0
 * implémentation des tags en sortie par groupe de métriques au format influxdb et graphite
 * refonte des métriques switch_* pour utiliser les tags. Exemple : switch_1_tx_bytes_rate=value => tag(switch_port=1) switch_tx_bytes_rate=value

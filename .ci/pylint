@@ -1,0 +1,10 @@
+[MESSAGES CONTROL]
+# ref: https://pylint.pycqa.org/en/latest/user_guide/messages/messages_overview.html
+disable=invalid-name, missing-function-docstring, redefined-outer-name, multiple-statements, too-many-lines, global-statement, consider-using-f-string
+
+[FORMAT]
+max-line-length=200
+
+[REPORTS]
+# format for warning-ng
+msg-template='{path}:{line}: [{msg_id}, {obj}] {msg} ({symbol})'

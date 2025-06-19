@@ -11,168 +11,65 @@ The newer freebox devices don't offer the hosted file with all the data informat
 
 So this solution is leveraging the [Freebox API](http://dev.freebox.fr/sdk/os/) but just focuses on the stats I'm interested in, if you want to extend the script check all the other things available [here](http://dev.freebox.fr/sdk/os/connection/)
 
-# Pre-requisites
 
-This is what I used, you can of course adapt the collector script to talk to influxdb or whatever :-)
+## Documentation
 
-- [SexiGraf](http://www.sexigraf.fr) or any Grafana/Graphite stack
-- [Telegraf](https://github.com/influxdata/telegraf)
-- Python with `json` & `requests` libraries installed
-- Physical Access to the Freebox Server device
+* **[Installation](doc/installation.md)**
+* **[List of available metrics and tags](doc/output_metrics.md)**
 
-# Step 1: Register an app with the Freebox device
 
-First thing to do is to register an app, to generate a specific `freebox_app_token`.
+## Command-line arguments
 
-Run `python freebox_monitoring.py --register [-e endpoint] [-a My_app_name -i My_app_id -d My_device_name]` to do that.
+Available command-line switches and parameters:
 
-*PS: You can modify the app name/id/device name with -a My_app_name -i My_app_id -d My_device_name (Optional)*
+```
+SexiMonitor (0.8.0)
 
-*PS: You can specify the -e endpoint (Freebox name or address) to allow multiple endpoints (Optional)*
+options:
+  -h, --help            show this help message and exit
+  -d, --debug           Activate the debug mode and print the retrieved data
+  -c /path/to/file, --config /path/to/file
+                        Full path to the credential file. Default is: /server/freebox/releases/freebox-monitoring-v0.8.0/.credentials
+  -r, --register        Register the app with the Freebox API and cache the API url and version
+  -s, --register-status
+                        Get the registration status
+  -f {graphite,influxdb}, --format {graphite,influxdb}
+                        Specify output format between 'graphite' and 'influxdb'
+  -e target-host, --endpoint target-host
+                        Specify the dns or ip of the endpoint. Default is: mafreebox.freebox.fr
+  --api-endpoint-detect-force
+                        Ignore the cache and force the detection of the api capabilities from the endpoint target. Allow some overrides.
+  --api-version-force version_major
+                        Override the API major version and ignore the autodetection. Must be used with either '--register' or '--api-endpoint-detect-force'
+  --ssl-no-verify       Disable the certificate validity tests on ssl connections
+  --ssl-ca-bundle-file /path/to/file.pem
+                        Full path to the custom ssl CA bundle file in PEM format. Both the root and intermediate certs must be present. Default is: /server/freebox/releases/freebox-
+                        monitoring-v0.8.0/ssl/free_telecom_bundle.pem
+  -v, --version         Show the version and exit
 
-Once you execute this script, you will see something similar to this:
+  -C, --status-call     Get the phone call logs and history
+  -X, --status-dhcp     Get and show the dhcp status
+  -D, --status-disk, --internal-disk-usage
+                        Get and show the disks status
+  -B, --status-lan-browser
+                        Get and show the hosts on the local network with the lan browser
+  -L, --status-lte      Get and show 4G/LTE aggregation status
+  -H, --status-sys      Get and show system status
+  -P, --status-ports    DEPRECATED: has no effect, integrated into --status-switch and kept for compatibility
+  -S, --status-switch   Get and show the switch and ports status
+  -M, --status-virtualmachines
+                        Get and show the virtual machines status
+  -V, --status-vpnsrv   Get and show the VPN Servers status
+  -Z, --status-vpnclient
+                        Get and show the integrated VPN client status
+  -W, --status-wifi     Get and show the Wifi status
 
-![register](doc/freebox_registration.png)
-
-Head to your Freebox Server device.
-
-![Freebox Server Validation](doc/seximonitor_register.jpg)
-
-Press the `>` to authorize the app registration process.
-
-You can check the saved tokens with `python freebox_monitor.py --register-status`:
-
-![register-status](doc/freebox_registration_status.png)
-
-If you need to re-auth you can delete the authorization credentials by removing the file `.credentials` in the directory where `freebox_monitor.py` is.
-
-# Step 2: Use the script to display freebox statistics information
-
-Once you have your `freebox_app_token`, the process to authenticate happens in 2 steps:
-- Fetch the current `challenge`. (basically a random generated string changing over time)
-- Compute a `session password` with the `challenge` and your `freebox_app_token`.
-
-(This avoids sending the token over the network)
-
-Then execute it, to make sure it connects and displays information.
-
-![freebox monitor](doc/freebox_monitor.png)
-
-# Step 3: Stats to get and show
-
-By default it auto adapts beetween FFTH and xDSL, by using a switch indicated (`python freebox_monitor.py 'indicated switch'`) you can get the listed stats.
-
-  * FFTH and xDSL (no switch, default)
-    * bytes up/down
-    * rate up/down
-    * bandwidth up/down
-    * connection state
-    
-  * FTTH
-    * sfp power rx/tx
-  
-  * xDSL (each for up, and down, except uptime)
-    * uptime
-    * errors: es, hec, crc, ses, fec
-    * rate, attenuation, signal noise ratio, max rate
-    * G.INP status, corrected and uncorrected
-    
-  * System infos (-H switch)
-    * Fan RPM, temp SW, CPU B, CPU M, Box uptime
-    
-  * Switch status (-S switch)
-    * for each switch port: link mode
-    
-  * Switch ports status (-P switch)
-    * for each switch port: rx/tx bytes rate
-
-# Step 4: Leverage telegraf to call the script and send stats to Graphite
-
-Install telegraf on the SexiGraf appliance.
-
-```console
-wget https://dl.influxdata.com/telegraf/releases/telegraf_1.0.1_amd64.deb
-dpkg -i telegraf_1.0.1_amd64.deb 
 ```
 
-Generate a config file for our plugins `exec` and `graphite`.
+**Notice:** using the parameter `--status-virtualmachines` on a system missing the virtualization capability will cause a 404 error.  
+Also, the following parameters have not been fully tested and could not work completely: --status-virtualmachines, --status-vpnsrv, --status-lte, --status-disk
 
-```console
-telegraf --input-filter exec --output-filter graphite config > /etc/telegraf/telegraf.conf
-```
 
-Check & edit the configuration file to make it look as follows:
+## Licence
 
-```ini
-###############################################################################
-#                            OUTPUT PLUGINS                                   #
-###############################################################################
-
-# Configuration for Graphite server to send metrics to
-[[outputs.graphite]]
-  ## TCP endpoint for your graphite instance.
-  ## If multiple endpoints are configured, output will be load balanced.
-  ## Only one of the endpoints will be written to with each iteration.
-  servers = ["localhost:2003"]
-  ## Prefix metrics name
-  prefix = ""
-  ## Graphite output template
-  ## see https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
-  template = "host.tags.measurement.field"
-  ## timeout in seconds for the write connection to graphite
-  timeout = 2
-
-###############################################################################
-#                            INPUT PLUGINS                                    #
-###############################################################################
-
-# Read metrics from one or more commands that can output to stdout
-[[inputs.exec]]
-  ## Commands array
-  command = [
-     "/usr/local/freebox-revolution-monitoring/freebox_monitor.py",
-     "/usr/local/freebox-revolution-monitoring/freebox_monitor.py -e another_freebox_address"
-  ]
-
-  ## Timeout for each command to complete.
-  timeout = "5s"
-
-  ## Data format to consume.
-  ## Each data format has it's own unique set of configuration options, read
-  ## more about them here:
-  ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
-  data_format = "graphite"
-```
-
-Copy your modified `freebox_monitor.py` script to `/usr/local/freebox-monitoring/`
-
-Relaunch telegraf and check the logs
-
-```console
-root@sexigraf:~# tail -f /var/log/telegraf/telegraf.log
-2016/12/11 18:26:30 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675367. Total dropped metrics: 0.
-2016/12/11 18:26:30 Output [graphite] wrote batch of 7 metrics in 165.892µs
-2016/12/11 18:26:40 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675374. Total dropped metrics: 0.
-2016/12/11 18:26:40 Output [graphite] wrote batch of 7 metrics in 169.849µs
-2016/12/11 18:26:50 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675381. Total dropped metrics: 0.
-2016/12/11 18:26:50 Output [graphite] wrote batch of 7 metrics in 183.453µs
-2016/12/11 18:27:00 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675388. Total dropped metrics: 0.
-2016/12/11 18:27:00 Output [graphite] wrote batch of 7 metrics in 156.956µs
-2016/12/11 18:27:10 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675395. Total dropped metrics: 0.
-2016/12/11 18:27:10 Output [graphite] wrote batch of 7 metrics in 170.216µs
-2016/12/11 18:27:20 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675402. Total dropped metrics: 0.
-2016/12/11 18:27:20 Output [graphite] wrote batch of 7 metrics in 177.338µs
-```
-
-If the output is similar to this, you should be good to go and build your own dashboards in SexiGraf.
-
-Here is a 2 day view of the download/upload stats.
-
-![dashboard 2days](doc/freebox_2days.png)
-
-Example of the xDSL graphs
-
-![xdsl_dash_12h_1](doc/freebox_xdsl_12h_1.png)
-![xdsl_dash_12h_2](doc/freebox_xdsl_12h_2.png)
-
-Enjoy !
+[MIT](LICENSE)
