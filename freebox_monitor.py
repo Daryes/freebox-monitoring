@@ -25,10 +25,12 @@ else:
 # Doc2: http://mafreebox.freebox.fr/#Fbx.os.app.help.app
 #
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 APP_ID = "fr.freebox.seximonitor"
 APP_NAME = "SexiMonitor"
 
+
+CONFIG_FILE = os.path.join( os.path.dirname(os.path.realpath(__file__)), ".credentials")
 
 # variables & constants -----------------------------------
 DEBUG = 0  # updated by the cmdline
@@ -41,9 +43,10 @@ ENDPOINT_FAILSAFE = "http://mafreebox.freebox.fr/api/v4"
 # updated on the first API connection
 ENDPOINT = ""
 ENDPOINT_SSL = 0
+ENDPOINT_API_MAJOR_FORCE = 0
 
 # extra tags in the response - updated when retrieving system data
-OUTPUT_TAGS = {"hw_operator": "Free"}
+OUTPUT_TAGS_GLOBAL = {"hw_operator": "Free"}
 
 
 def debug_output(sData):
@@ -52,9 +55,22 @@ def debug_output(sData):
     print("%s" % sData)
 
 
+# Format the tags{"name": value, "name2": value2, ...} in a single string
+def do_tags_format_for_output(sOutputType, aTagList):
+    sRet = ""
+    aTagSeparator = {"influxdb": ',', "graphite": ';'}
+
+    sSeparator = aTagSeparator[sOutputType.lower()]
+    for sTagName, sTagValue in aTagList.items():
+        # as the tags are following the measurement, the result must start with the separator (, or ;)
+        sRet = sRet + sSeparator + sTagName + "=\"" + str(sTagValue) + "\""
+    return sRet
+
+
 def get_api_endpoint_detect():
     global ENDPOINT
     global ENDPOINT_SSL
+    global OUTPUT_TAGS_GLOBAL
 
     api_endpoint_detect_url = 'http://%s/api_version' % (ENDPOINT_HOST)
     r = requests.get(api_endpoint_detect_url)
@@ -82,11 +98,17 @@ def get_api_endpoint_detect():
 
     # extract the api major version
     api_endpoint_version_major = int( float(json_raw['api_version']) )
+    if ENDPOINT_API_MAJOR_FORCE > 0:
+        api_endpoint_version_major = ENDPOINT_API_MAJOR_FORCE
+        debug_output("get_api_endpoint_detect() => API version forced to: %s" % ENDPOINT_API_MAJOR_FORCE)
 
     # endpoint final url
     ENDPOINT = "%s/%s/v%s" % (api_endpoint_url, api_endpoint_path, str(api_endpoint_version_major))
     debug_output("get_api_endpoint_detect() => endpoint detected: %s" % ENDPOINT)
     set_api_ssl_verification()
+    
+    OUTPUT_TAGS_GLOBAL["api_endpoint"] = api_endpoint_url
+    OUTPUT_TAGS_GLOBAL["api_version"] = str(api_endpoint_version_major)
 
 
 def set_api_ssl_verification():
@@ -218,7 +240,7 @@ def get_xdsl_status(headers):
 
 
 def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports = 1, s_disk = 0):
-    global OUTPUT_TAGS
+    global OUTPUT_TAGS_GLOBAL
 
     # Fetch challenge
     resp = get_challenge(creds['track_id'])
@@ -241,13 +263,16 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
     }
 
     # Setup hashtable for results
-    my_data = {}
+    final_data = {}
 
     # Fetch connection stats
     json_raw = get_connection_stats(headers)
 
     # Generic datas, same for FFTH or xDSL
+
     if 'result' in json_raw:
+        my_data = {} ; my_tags = {}
+
         my_data['bytes_down'] = json_raw['result']['bytes_down']  # total in bytes since last connection
         my_data['bytes_up'] = json_raw['result']['bytes_up']
 
@@ -257,40 +282,51 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
         my_data['bandwidth_down'] = json_raw['result']['bandwidth_down']  # available bw in bit/s
         my_data['bandwidth_up'] = json_raw['result']['bandwidth_up']
 
-    if json_raw['result']['state'] == "up":
-        my_data['state'] = 1
-        if 'ipv4' in json_raw['result']:
-            my_data['wan_ipv4'] = json_raw['result']['ipv4']
-            my_data['wan_ipv4_port_range_min'] = json_raw['result']['ipv4_port_range'][0]
-            my_data['wan_ipv4_port_range_max'] = json_raw['result']['ipv4_port_range'][1]
+        if json_raw['result']['state'] == "up":
+            my_data['state'] = 1
+            if 'ipv4' in json_raw['result']:
+                my_data['wan_ipv4'] = json_raw['result']['ipv4']
+                my_data['wan_ipv4_port_range_min'] = json_raw['result']['ipv4_port_range'][0]
+                my_data['wan_ipv4_port_range_max'] = json_raw['result']['ipv4_port_range'][1]
 
-        if 'ipv6' in json_raw['result']:
-            my_data['wan_ipv6'] = json_raw['result']['ipv6']
+            if 'ipv6' in json_raw['result']:
+                my_data['wan_ipv6'] = json_raw['result']['ipv6']
 
-    else:
-        my_data['state'] = 0
+        else:
+            my_data['state'] = 0
+
+        final_data['connection'] = {'tags': my_tags, 'data': my_data}
+
 
 
     # ffth for FFTH (default)
     # xdsl for xDSL
-    connection_media = json_raw['result'].get('media', 'none')
+    connection_media = json_raw['result'].get('media', 'none').lower()
 
     ###
     # FFTH specific
     if connection_media in ["ffth", "ftth"]:
         json_raw = get_ftth_status(headers)
         if 'result' in json_raw:
+            my_data = {} ; my_tags = {}
+
             my_data['sfp_pwr_rx'] = json_raw['result']['sfp_pwr_rx']  # scaled by 100 (in dBm)
             my_data['sfp_pwr_tx'] = json_raw['result']['sfp_pwr_tx']
             my_data['sfp_alim_ok'] = 1 if json_raw['result']['sfp_alim_ok'] else 0
             my_data['sfp_has_power_report'] = 1 if json_raw['result']['sfp_has_power_report'] else 0
             my_data['sfp_has_signal'] = 1 if json_raw['result']['sfp_has_signal'] else 0
 
+            my_tags['conn_media'] = connection_media
+
+            final_data[connection_media] = {'tags': my_tags, 'data': my_data}
+
     ###
     # xDSL specific
     if connection_media == "xdsl":
         json_raw = get_xdsl_status(headers)
         if 'result' in json_raw:
+            my_data = {} ; my_tags = {}
+
             my_data['xdsl_modulation'] = json_raw['result']['status']['modulation'] + " (" + json_raw['result']['status']['protocol'] + ")"
             my_data['xdsl_uptime'] = json_raw['result']['status']['uptime']  # in seconds
             my_data['xdsl_status_string'] = json_raw['result']['status']['status']
@@ -333,12 +369,17 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
                     my_data['xdsl_%s_rtx_c' % sDir] =  json_raw['result'][sDir]['rxmt_corr']   # G.INP corrected
                     my_data['xdsl_%s_rtx_uc' % sDir] = json_raw['result'][sDir]['rxmt_uncorr'] # G.INP uncorrected
 
+            my_tags['conn_media'] = connection_media
+
+            final_data[connection_media] = {'tags': my_tags, 'data': my_data}
 
     ##
     # General infos
     if s_sys:
         sys_json_raw = get_system_config(headers)
         if 'result' in sys_json_raw:
+            my_data = {} ; my_tags = {}
+
             my_data['sys_fan_rpm'] = sys_json_raw['result']['fan_rpm'] # rpm
             my_data['sys_temp_sw'] = sys_json_raw['result']['temp_sw']  # Temp Switch, degree Celcius
             my_data['sys_uptime'] = sys_json_raw['result'].get('uptime_val', 0) # Uptime, in seconds
@@ -347,12 +388,16 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             my_data['firmware_version'] = sys_json_raw['result']['firmware_version']  # Firmware version
             my_data['sys_authenticated'] = sys_json_raw['result']['box_authenticated']  # box at step 6
 
-            OUTPUT_TAGS["hw_board"] = sys_json_raw['result']['board_name']
-            OUTPUT_TAGS["hw_serial"] = sys_json_raw['result']['serial']
+            my_tags['hw_firmware'] = sys_json_raw['result']['firmware_version']
+
+            final_data['system'] = {'tags': my_tags, 'data': my_data}
+
+            OUTPUT_TAGS_GLOBAL["hw_board"] = sys_json_raw['result']['board_name']
+            OUTPUT_TAGS_GLOBAL["hw_serial"] = sys_json_raw['result']['serial']
 
         sysmodel_json_raw = get_system_model(headers)
         # no result sublevel for _system_model
-        OUTPUT_TAGS["hw_model"] = sysmodel_json_raw['box_model']
+        OUTPUT_TAGS_GLOBAL["hw_model"] = sysmodel_json_raw['box_model']
 
 
     ##
@@ -363,11 +408,17 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             nSwitchPortCount = 0
 
             for i in switch_json_raw['result']:
+                my_data = {} ; my_tags = {}
+
                 # 0 down, 1 up
-                my_data['switch_%s_link' % i['id']] = 1 if i['link'].lower() == "up" else 0
+                my_data['switch_link'] = 1 if i['link'].lower() == "up" else 0
                 # 0 half, 1 full
-                my_data['switch_%s_duplex' % i['id']] = 1 if i['duplex'].lower() == "full" else 0
-                my_data['switch_%s_speed' % i['id']] = int( i['speed'] )
+                my_data['switch_duplex'] = 1 if i['duplex'].lower() == "full" else 0
+                my_data['switch_speed'] = int( i['speed'] )
+
+                my_tags['switch_port'] = int(i['id'])
+
+                final_data['switch_%s' % i['id'] ] = {'tags': my_tags, 'data': my_data}
                 nSwitchPortCount = nSwitchPortCount + 1
 
             ##
@@ -376,14 +427,21 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
                 for i in range(1, nSwitchPortCount + 1 ):
                     switch_port_stats = get_switch_port_stats(headers, i)
                     if 'result' in switch_port_stats:
+                        my_data = {} ; my_tags = {}
+
                         # these metrics exist for both "rx_*" and "tx_*"
                         for sMode in ['rx', 'tx']:
-                            my_data['switch_%s_%s_bytes_rate' % (i, sMode)] = switch_port_stats['result']['%s_bytes_rate' % sMode]  # bytes/s
+                            my_data['switch_%s_bytes_rate' % sMode] = switch_port_stats['result']['%s_bytes_rate' % sMode]  # bytes/s
 
                         # these metrics only exist on one mode
-                        my_data['switch_%s_err_packets' % i] = switch_port_stats['result']['rx_err_packets']
-                        my_data['switch_%s_discard_packets' % i] = switch_port_stats['result']['rx_discard_packets']
-                        my_data['switch_%s_collisions' % i] = switch_port_stats['result']['tx_collisions']
+                        my_data['switch_err_packets'] = switch_port_stats['result']['rx_err_packets']
+                        my_data['switch_discard_packets'] = switch_port_stats['result']['rx_discard_packets']
+                        my_data['switch_collisions'] = switch_port_stats['result']['tx_collisions']
+
+                        # the tag is the same for the port and the switch statistics
+                        my_tags['switch_port'] = int(i)
+
+                        final_data['switch_port_%s' % str(i)] = {'tags': my_tags, 'data': my_data}
 
 
     # Fetch internal disk stats
@@ -397,43 +455,53 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             if 'temp' in json_raw['result']:
                 my_data['disk_temp'] =  json_raw['result']['temp']
 
+            my_tags['partition_label'] = json_raw['result'][0]['label']
+            my_tags['partition_fstype'] = json_raw['result'][0]['fstype']
+
+            final_data['switch_port_%s' % i['id'] ] = {'tags': my_tags, 'data': my_data}
+
+
+
+    # generate the global tag list for the output
+    sOutputTagsGlobal = do_tags_format_for_output(sOutputFormat, OUTPUT_TAGS_GLOBAL)
 
     # Switching between outputs formats 
     if sOutputFormat == 'influxdb':
         # Prepping Influxdb Data format
         timestamp = int(time.time())* 1000000
 
-        # generate the tag list
-        sOutputTags=""
-        for x, y in OUTPUT_TAGS.items():
-            sOutputTags = sOutputTags + ',' + x + "=\"" + y + "\""
-
         # Output the information - format is : measurement,tag=name,tag=name metric=value,metric=value time
-        for i in my_data:
-            if type(my_data[i]) == str:
-                my_data[i] = "\"" + my_data[i] + "\""
-            print("freebox%s %s=%s %d" % (sOutputTags, i, my_data[i], timestamp))
+        # each entry is in the form : {'tags': my_tags{}, 'data': my_data{}}
+        for x in final_data:
+            my_tags = final_data[x]['tags']
+            my_data = final_data[x]['data']
+            sOutputTagsMetric = do_tags_format_for_output(sOutputFormat, my_tags)
+
+            for i in my_data:
+                if type(my_data[i]) == str:
+                    my_data[i] = "\"" + my_data[i] + "\""
+                print("freebox%s %s=%s %d" % (sOutputTagsGlobal + sOutputTagsMetric, i, my_data[i], timestamp))
 
     else:
         # Prepping Graphite Data format
         timestamp = int(time.time())
 
-        # generate the tag list
-        sOutputTags=""
-        for x, y in OUTPUT_TAGS.items():
-            sOutputTags = sOutputTags + ';' + x + "=\"" + y + "\""
-
         # Output the information - format is : measurement.metric;tag=name;tag=name value time
-        for i in my_data:
-            print("freebox.%s%s %s %d" % (i, sOutputTags, my_data[i], timestamp))
+        # each entry is in the form : {'tags': my_tags{}, 'data': my_data{}}
+        for x in final_data:
+            my_tags = final_data[x]['tags']
+            my_data = final_data[x]['data']
+            sOutputTagsMetric = do_tags_format_for_output(sOutputFormat, my_tags)
+
+            for i in my_data:
+                print("freebox.%s%s %s %d" % (i, sOutputTagsGlobal + sOutputTagsMetric, my_data[i], timestamp))
 
 
-def get_auth():
+def get_auth(cfg_file):
     global ENDPOINT
     global ENDPOINT_SSL
     
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    cfg_file = os.path.join(script_dir, ".credentials")
+    debug_output('get_auth() => cred file: ' + cfg_file)
 
     f = configp.RawConfigParser()
     f.read(cfg_file)
@@ -456,9 +524,7 @@ def get_auth():
             }
 
 
-def write_auth(auth_infos):
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    cfg_file = os.path.join(script_dir, ".credentials")
+def write_auth(cfg_file, auth_infos):
     f = configp.RawConfigParser()
     f.add_section("general")
     f.set("general", "track_id", auth_infos['track_id'])
@@ -470,7 +536,7 @@ def write_auth(auth_infos):
         f.write(authFile)
 
 
-def do_register(creds):
+def do_register(cfg_file, creds):
     if creds is not None:
         if 'track_id' in creds and 'app_token' in creds:
             print("Already registered, exiting")
@@ -494,7 +560,7 @@ def do_register(creds):
     else:
         print('Failed registration: %s\n' % r.text)
 
-    write_auth(register_infos['result'])
+    write_auth(cfg_file, register_infos['result'])
     print("Don't forget to accept the authentication on the Freebox panel !")
 
 
@@ -502,7 +568,7 @@ def register_status(creds):
     if not creds:
         print("Status: invalid config, auth is missing.")
         print("Please run `%s --register` to register app." % sys.argv[0])
-        return
+        sys.exit(1)
 
     print("Status:")
     print("  track_id: %s" % creds["track_id"])
@@ -513,46 +579,45 @@ def register_status(creds):
 
 # Main
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--register', action='store_true', help="Register app with Freebox API and cache the API endpoint URL")
+    parser = argparse.ArgumentParser(description = "%s (%s)" % (APP_NAME, APP_VERSION))
+    parser.add_argument('-d', '--debug', dest='debug', action='store_true', help="Activate the debug mode and print the retrieved data")
+    parser.add_argument('-c', '--config', dest='config_file', metavar='/path/to/file', default=CONFIG_FILE, help="Full path to the location of the credential file. Default is: " + CONFIG_FILE)
+    parser.add_argument('-r', '--register', action='store_true', help="Register the app with the Freebox API and cache the API endpoint URL and also version")
     parser.add_argument('-s', '--register-status', dest='status', action='store_true', help="Get register status")
     parser.add_argument('-f', '--format', dest='format', choices=['graphite', 'influxdb'], default='graphite', help="Specify output format between 'graphite' and 'influxdb'")
-    parser.add_argument('-e', '--api-endpoint-detect-force', dest='endpoint_detect_force', action='store_true', help="Force the detection of the api endpoint on each access")
-    parser.add_argument('-d', '--debug', dest='debug', action='store_true', help="Activate the debug mode and print the retrieved data")
+    parser.add_argument('-e', '--endpoint', dest='endpoint', metavar='target-host', default=ENDPOINT_HOST, help="Specify the dns or ip of the endpoint. Default is: " + ENDPOINT_HOST)
+    parser.add_argument('--api-version-force', dest='endpoint_api_force_major', metavar='version_major', default='', help="Force the API major version and ignore the autodetection. Must be used with either '--register' or '--api-endpoint-detect-force'")
+    parser.add_argument('--api-endpoint-detect-force', dest='endpoint_detect_force', action='store_true', help="Ignore the cache and force at each access the detection of the api capabilities from the endpoint target. Allow some API overrides.")
     parser.add_argument('--ssl-no-verify', dest='ssl_verify', action='store_false', help="Disable the certificate validity tests on ssl connections")
+    parser.add_argument('-v', '--version', dest='version', action='store_true', help="Show the version and exit")
 
-    parser.add_argument('-S', '--status-switch',
-                        dest='status_switch',
-                        action='store_true',
-                        help="Get and show switch status")
-
-    parser.add_argument('-P', '--status-ports',
-                        dest='status_ports',
-                        action='store_true',
-                        help="Obsolete - integrated into --status-switch and kept for compatibility")
-
-    parser.add_argument('-H', '--status-sys',
-                        dest='status_sys',
-                        action='store_true',
-                        help="Get and show system status")
-
-    parser.add_argument('-D', '--internal-disk-usage',
-                        dest='disk_usage',
-                        action='store_true',
-                        help="Get and show internal disk usage")
-
+    parser.add_argument('-S', '--status-switch', dest='status_switch', action='store_true', help="Get and show switch status")
+    parser.add_argument('-P', '--status-ports', dest='status_ports',action='store_true', help="Obsolete - integrated into --status-switch and kept for compatibility")
+    parser.add_argument('-H', '--status-sys', dest='status_sys', action='store_true', help="Get and show system status")
+    parser.add_argument('-D', '--internal-disk-usage', dest='disk_usage', action='store_true', help="Get and show internal disk usage")
 
     args = parser.parse_args()
 
-    DEBUG = args.debug
-    SSL_VERIFY = args.ssl_verify
+    if args.version:
+        print("Version: %s" % APP_VERSION)
+        sys.exit(0)
 
-    auth = get_auth()
+
+    # applying the parameter values
+    DEBUG = args.debug
+    ENDPOINT_HOST = args.endpoint
+    ENDPOINT_API_MAJOR_FORCE = int(args.endpoint_api_force_major) if len(args.endpoint_api_force_major.strip()) > 0 else 0
+    SSL_VERIFY = args.ssl_verify
+    CONFIG_FILE = args.config_file
+
+
+    # auth init
+    auth = get_auth(CONFIG_FILE)
     set_api_ssl_verification()
 
     if args.register:
         get_api_endpoint_detect()
-        do_register(auth)
+        do_register(CONFIG_FILE, auth)
 
     elif args.status:
         register_status(auth)
