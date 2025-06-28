@@ -14,6 +14,7 @@ So this solution is leveraging the [Freebox API](http://dev.freebox.fr/sdk/os/) 
 
 ## Documentation
 
+* **[Changelog](CHANGELOG.md)**
 * **[Installation](doc/installation.md)**
 * **[List of available metrics and tags](doc/output_metrics.md)**
 
@@ -29,7 +30,7 @@ options:
   -h, --help            show this help message and exit
   -d, --debug           Activate the debug mode and print the retrieved data
   -c /path/to/file, --config /path/to/file
-                        Full path to the credential file. Default is: /server/freebox/releases/freebox-monitoring-v0.8.0/.credentials
+                        Full path to the credential file. Default is: <current directory>/.credentials
   -r, --register        Register the app with the Freebox API and cache the API url and version
   -s, --register-status
                         Get the registration status
@@ -43,8 +44,7 @@ options:
                         Override the API major version and ignore the autodetection. Must be used with either '--register' or '--api-endpoint-detect-force'
   --ssl-no-verify       Disable the certificate validity tests on ssl connections
   --ssl-ca-bundle-file /path/to/file.pem
-                        Full path to the custom ssl CA bundle file in PEM format. Both the root and intermediate certs must be present. Default is: /server/freebox/releases/freebox-
-                        monitoring-v0.8.0/ssl/free_telecom_bundle.pem
+                        Full path to the custom ssl CA bundle file in PEM format. Both the root and intermediate certs must be present. Default is: <current directory>/ssl/free_telecom_bundle.pem
   -v, --version         Show the version and exit
 
   -C, --status-call     Get the phone call logs and history

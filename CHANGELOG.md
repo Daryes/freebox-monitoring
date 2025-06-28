@@ -105,7 +105,7 @@ Non diffusé.
 ## v0.5.0
 * correction des metriques sytemes
 * refonte de la gestion des parametres app_id, app_name et device_name
-* normaliztion des paramètre pour la ligne de commande
+* normalisation des paramètre pour la ligne de commande
 
 ## v0.4.5 - 2022
 * fork
