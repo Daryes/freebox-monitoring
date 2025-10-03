@@ -9,13 +9,16 @@ Based/Inspired by https://github.com/tuxtof/freebox-monitoring
 
 The newer freebox devices don't offer the hosted file with all the data information usually accessible here [`http://mafreebox.freebox.fr/pub/fbx_info.txt`](http://mafreebox.freebox.fr/pub/fbx_info.txt)
 
-So this solution is leveraging the [Freebox API](http://dev.freebox.fr/sdk/os/) but just focuses on the stats I'm interested in, if you want to extend the script check all the other things available [here](http://dev.freebox.fr/sdk/os/connection/)
+This solution is leveraging the [Freebox API](http://dev.freebox.fr/sdk/os/) for most of the data available, but some might be missing, due to lack of hardware or internet.  
+If you want to extend the script, check the official API documentation [on the dedicated page](http://dev.freebox.fr/sdk/os/connection/).  
+The debug mode can also be activated to print the retrieved data from the API.
 
 
 ## Documentation
 
 * **[Changelog](CHANGELOG.md)**
 * **[Installation](doc/installation.md)**
+* **[Dashboard](doc/dashboard.md)**
 * **[List of available metrics and tags](doc/output_metrics.md)**
 
 
@@ -63,7 +66,6 @@ options:
   -Z, --status-vpnclient
                         Get and show the integrated VPN client status
   -W, --status-wifi     Get and show the Wifi status
-
 ```
 
 **Notice:** using the parameter `--status-virtualmachines` on a system missing the virtualization capability will cause a 404 error.  

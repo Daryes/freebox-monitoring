@@ -9,7 +9,7 @@ import hmac
 import time
 import argparse
 import sys
-from hashlib import sha1
+import hashlib
 import base64
 import re
 import socket
@@ -31,11 +31,11 @@ else:
 APP_ID = "fr.freebox.seximonitor"
 APP_NAME = "SexiMonitor"
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 
-# max api an firmware tested uppon
+# max api an firmware tested upon
 APP_TESTED_MAX_API = "14"
-APP_TESTED_MAX_FIRMWARE = "4.9.6"
+APP_TESTED_MAX_FIRMWARE = "4.9.8"
 
 # variables & constants -----------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -44,6 +44,7 @@ CONFIG_FILE = os.path.join( SCRIPT_DIR, ".credentials")
 ENDPOINT_HOST = "mafreebox.freebox.fr"
 ENDPOINT_FAILSAFE = "http://mafreebox.freebox.fr/api/v4"
 ENDPOINT_REQUEST_TIMEOUT=5
+ENDPOINT_AUTH_HASH = "sha1"
 
 # separators depending of the output type
 OUTPUT_MEASUREMENT = {
@@ -74,7 +75,7 @@ def debug_output(sData):
     print("DEBUG: %s" % sData)
 
 
-def replace_accents_string(text):
+def replace_accents_string(sText):
     # ref: https://coderivers.org/blog/python-replace-accented-character-with-ascii-character/
     replacements = {
         r'à|á|â|ã|ä|å': 'a',
@@ -89,8 +90,13 @@ def replace_accents_string(text):
         r'  +': ' '
     }
     for pattern, replacement in replacements.items():
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-    return text.strip()
+        sText = re.sub(pattern, replacement, sText, flags=re.IGNORECASE)
+    return sText.strip()
+
+
+# replace by a space any ".;()[]/\" from a string
+def sanitize_string(sText):
+    return re.sub( '[' + re.escape('.;()[]/\\') + ']+', ' ', str(sText), flags=re.IGNORECASE).strip()
 
 
 # Format the measurement name
@@ -171,7 +177,6 @@ def set_api_ssl_verification():
         else:
             debug_output("set_api_ssl_verification() => disabling ssl verification")
             # Disable SSL verification
-            # TODO: manage the self-signed free telecom CA
             os.environ['REQUESTS_CA_BUNDLE'] = ''                       # no effect after requests v2.28.0
             requests.packages.urllib3.disable_warnings()                # disable warnings messages
 
@@ -193,6 +198,19 @@ def get_challenge(freebox_track_id):
         print("Failed request: %s\n" % r.text)
 
 
+# generate the session password from the token and the received challenge string
+def do_challenge_session_password(sToken, sChallenge):
+    debug_output("do_challenge_session_password() => token size: %d, hash type: %s" % (len(sToken), ENDPOINT_AUTH_HASH) )
+
+    if sys.version_info >= (3, 0):
+        h = hmac.new(bytearray(sToken, 'ASCII'), bytearray(sChallenge, 'ASCII'), ENDPOINT_AUTH_HASH)
+    else:
+        # python2 support
+        h = hmac.new(sToken, sChallenge, hashlib.sha1)
+
+    return h.hexdigest()
+
+
 def open_session(password, freebox_app_id):
     api_url = '%s/login/session/' % ENDPOINT
     debug_output("open_session() => url: %s" % api_url)
@@ -209,6 +227,9 @@ def open_session(password, freebox_app_id):
         return r.json()
     else:
         print("Failed request: %s\n" % r.text)
+        if "invalid_token" in r.text:
+            print("In case of an invalid token error, please verify if the %s algorithm used for the challenge is supported by the endpoint when opening a session.\n" % ENDPOINT_AUTH_HASH)
+        sys.exit(2)
 
 
 def get_request_api_url(sApiUrl, oHeaders, nStatusCode_success = 200):
@@ -370,14 +391,7 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
 
     # Fetch challenge
     resp = get_challenge(creds['track_id'])
-    challenge = resp['result']['challenge']
-
-    # Generate session password
-    if sys.version_info >= (3, 0):
-        h = hmac.new(bytearray(creds['app_token'], 'ASCII'), bytearray(challenge, 'ASCII'), sha1)
-    else:
-        h = hmac.new(creds['app_token'], challenge, sha1)
-    password = h.hexdigest()
+    password = do_challenge_session_password(creds['app_token'], resp['result']['challenge'])
 
     # Fetch session_token
     resp = open_session(password, APP_ID)
@@ -436,6 +450,9 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
         my_measure = ""
         my_data = {} ; my_tags = {}
 
+        # bug : rate_up & bytes_up are cumulated with their *_down counterpart
+        # the PATCH_FIX_RATE_UP_BYTES_UP fix is managed in the switch metrics section
+
         my_data['bytes_down'] = json_raw['bytes_down']  # total in bytes since last connection
         my_data['bytes_up'] = json_raw['bytes_up']
 
@@ -444,11 +461,6 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
 
         my_data['bandwidth_down'] = json_raw['bandwidth_down']  # available bw in bit/s
         my_data['bandwidth_up'] = json_raw['bandwidth_up']
-
-        # bug : rate_up & bytes_up are cumulated with their *_down counterpart
-        if PATCH_FIX_RATE_UP_BYTES_UP:
-            my_data['bytes_up'] = abs(my_data['bytes_up'] - my_data['bytes_down'])
-            my_data['rate_up'] = abs(my_data['rate_up'] - my_data['rate_down'])
 
         if json_raw['state'] == "up":
             connection_media = json_raw.get('media', 'none').lower()
@@ -731,6 +743,8 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             my_measure = "switch"
             nSwitchPortCount = 0
             nTimeNowUnix = int(time.time())
+            PATCH_FIX_RATE_UP_BYTES_UP_rateup = 0
+            PATCH_FIX_RATE_UP_BYTES_UP_bytesup = 0
 
             # add the known client mac addresses
             for i in json_raw:
@@ -787,11 +801,21 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
 
                         final_data['switch_port_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags_port, 'data': my_data_port}
 
+                        # fix for connection stats - part 1 : rate_up & bytes_up are cumulated with their *_down counterpart - reuse the switch data
+                        if PATCH_FIX_RATE_UP_BYTES_UP:
+                            PATCH_FIX_RATE_UP_BYTES_UP_rateup = PATCH_FIX_RATE_UP_BYTES_UP_rateup + int( json_raw_port['rx_bytes_rate'] )
+                            PATCH_FIX_RATE_UP_BYTES_UP_bytesup = PATCH_FIX_RATE_UP_BYTES_UP_bytesup + int( json_raw_port['rx_good_bytes'] )
+
 
             # add the port count
             my_data = {} ; my_tags = {}
             my_data['switch_port_count'] = nSwitchPortCount
             final_data['switch_port_count'] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+
+            # fix for connection stats - part 2 : rate_up & bytes_up are cumulated with their *_down counterpart - reuse the switch data
+            if PATCH_FIX_RATE_UP_BYTES_UP:
+                final_data['connection']['data']['rate_up'] = PATCH_FIX_RATE_UP_BYTES_UP_rateup
+                final_data['connection']['data']['bytes_up'] = PATCH_FIX_RATE_UP_BYTES_UP_bytesup
 
 
     ##
@@ -904,7 +928,7 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             for d in json_raw['dns']:
                 if len( d.strip() ) > 0:
                     aDnsLst.append(d)
-            my_tags['dhcp_dns'] = ",".join(aDnsLst)  # TODO: maybe not a good idea
+            my_tags['dhcp_dns'] = ",".join(aDnsLst)  # TODO: maybe not a good idea to do a join()
 
             final_data['dhcp_config'] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
@@ -1206,7 +1230,7 @@ def get_and_print_metrics(creds, sOutputFormat, s_sys = 0, s_switch = 0, s_ports
             for m in my_data:
                 if isinstance(my_data[m], str):
                     my_data[m] = "\"" + my_data[m] + "\""
-                # TODO: single print() for the full "my_data[]"
+                # TODO: switch to a single print() for the full "my_data[]" as influxdb accepts multiple metrics for the same tags on the same line
                 print(sOutputMeasurement + sOutputTagsGlobal + sOutputTagsMetric + " " + m + "=" + str(my_data[m]))
 
     else:
@@ -1316,7 +1340,8 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--register', action='store_true', help="Register the app with the Freebox API and cache the API url and version")
     parser.add_argument('-s', '--register-status', dest='status', action='store_true', help="Get the registration status")
     parser.add_argument('-f', '--format', dest='format', choices=['graphite', 'influxdb'], default='graphite', help="Specify output format between 'graphite' and 'influxdb'")
-    parser.add_argument('-e', '--endpoint', dest='endpoint', metavar='target-host', default=ENDPOINT_HOST, help="Specify the dns or ip of the endpoint. Default is: " + ENDPOINT_HOST)
+    parser.add_argument('-e', '--endpoint', dest='endpoint', metavar='target-box', default=ENDPOINT_HOST, help="Specify the dns or ip of the endpoint. Default is: " + ENDPOINT_HOST)
+    parser.add_argument('--auth-hash-type', dest='endpoint_auth_hash_type', metavar='sha1|sha256|sha3_256|...', default=ENDPOINT_AUTH_HASH, help="Select the hash algorithm used when opening a session at the challenge step. Refer to hashlib documentation and the freebox API object SessionStart from /login/authorize for the supported types. Default is: " + ENDPOINT_AUTH_HASH)
     parser.add_argument('--api-endpoint-detect-force', dest='endpoint_detect_force', action='store_true', help="Ignore the cache and force the detection of the api capabilities from the endpoint target. Allow some overrides.")
     parser.add_argument('--api-version-force', dest='endpoint_api_force_major', metavar='version_major', default='', help="Override the API major version and ignore the autodetection. Must be used with either '--register' or '--api-endpoint-detect-force'")
     parser.add_argument('--ssl-no-verify', dest='ssl_verify', action='store_false', help="Disable the certificate validity tests on ssl connections")
@@ -1336,7 +1361,8 @@ if __name__ == '__main__':
     parser.add_argument('-Z', '--status-vpnclient', dest='status_vpnclient', action='store_true', help="Get and show the integrated VPN client status")
     parser.add_argument('-W', '--status-wifi', dest='status_wifi', action='store_true', help="Get and show the Wifi status")
 
-    parser.add_argument('--patch-rate-up-bytes-up', dest='patch_rate_up_bytes_up', action='store_true', help="Fix the rate_up & bytes_up metrics which are cumulated with their *_down counterpart since 10/2024")
+    # PATCH_FIX_RATE_UP_BYTES_UP
+    parser.add_argument('--patch-rate-up-bytes-up', dest='patch_rate_up_bytes_up', action='store_true', help="Fix the rate_up & bytes_up metrics which are cumulated with their *_down counterpart since 10/2024. See task 40445 for more information. This requires the '--status-switch' parameter to be activated, and the freebox switch not used for LAN traffic aside for internet access")
 
 
     args = parser.parse_args()
@@ -1349,6 +1375,7 @@ if __name__ == '__main__':
     # applying the parameter values
     DEBUG = args.debug
     ENDPOINT_HOST = args.endpoint
+    ENDPOINT_AUTH_HASH =  sanitize_string(args.endpoint_auth_hash_type)
     SSL_VERIFY = args.ssl_verify
     SSL_CUSTOM_CA_BUNDLE_FILE = args.ssl_ca_bundle_file
     CONFIG_FILE = args.config_file
@@ -1369,7 +1396,7 @@ if __name__ == '__main__':
         get_api_endpoint_detect()
         do_register(CONFIG_FILE, auth)
 
-    elif args.status:
+    elif args.status or not auth:
         register_status(CONFIG_FILE, auth)
 
     else:

@@ -1,5 +1,14 @@
 ﻿# freebox-monitoring changelog
 
+## v0.8.1
+
+* ligne de commande :  
+  * nouveau parametre : `--auth-hash-type` permettant de choisir le type d'algorithme pour l'authentification via token. Dépendant de ce que l'API freeboxOS accepte. Par défaut : `sha1`
+  * parametre modifié: `--patch-rate-up-bytes-up` utilise a la place d'une formule incomplete les metriques `rx_bytes_rate` et `rx_good_bytes` du switch.  
+    Requiert que la freebox n'ait qu'un seul branchement sur le LAN uniquement pour l'acces internet. Les autres ports ne doivent pas être utilisés pour le traffic LAN.  
+* correction pour éviter un message de type Traceback dans le cas d'une execution sans configuration établie ou inaccessible.  
+* dashboard ajouté pour Grafana v9 et v11.  
+
 
 ## v0.8.0
 * modification des métriques avec changement de nom de la mesure principale, exception des metriques par défaut hors paramètre `--status-...`

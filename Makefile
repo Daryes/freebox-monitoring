@@ -8,15 +8,6 @@ help: ## Show the targets and their description (this screen)
 
 
 # Global settings -----------------------------------
-# Mini-doc:
-# - mandatory TAB for indentation
-# - declare delayed variable : var=value  or var=va lu es  - quotes are litteral with make, they are not interpreted
-# - declare immediate variable : var:=value
-# - use variables    : var2=${var}  or  var2=$(var)
-# - retrieve command stdout : var=$$( command args )
-# - variable declaration with default value : var ?=default_value
-# - hide a line from the output : @command   or @# commentary
-
 SHELL=/bin/bash -o pipefail
 
 # Application name
@@ -42,3 +33,6 @@ test-syntax-1-pylint: ## run pylint - syntax : make test-syntax-1-pylint [ REPOR
 		pylint --rcfile .ci/pylint -f parseable --output ${REPORT_DIR}/pylint.log --exit-zero . && \
 		echo "PyLint" > ${REPORT_DIR}/${JENKINS_WRNG} ;\
 	else pylint --rcfile .ci/pylint . ; fi
+
+
+# vim: noexpandtab filetype=make
