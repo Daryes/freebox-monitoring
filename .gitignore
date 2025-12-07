@@ -10,6 +10,7 @@ __pycache__/
 .Python
 env/
 build/
+builds/
 develop-eggs/
 dist/
 downloads/
@@ -92,3 +93,6 @@ ENV/
 .idea
 
 doc_api/
+data/
+reports/
+

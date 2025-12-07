@@ -21,7 +21,7 @@ The new dashboard will be available under the name `Dashboard pour Freebox (Fibr
 Next, open the new dashboard, under its settings, then variables, you must change the following variables :   
 * dsdashboard : change the property "Instance name filter" with the correct name for your datasource in Grafana.  
   Currently set to `telegraf_network`
-* dsinterval : change the property "values" by the frequency you have set in your monitory agent. 
+* dsinterval : change the property "values" by the frequency you have set in your monitory agent.  
   Currently set to `5m`
 
 For both, check the "Preview" at the bottom, allowing to validate the result.  

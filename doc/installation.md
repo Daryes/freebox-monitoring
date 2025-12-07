@@ -8,18 +8,39 @@ This is what I used, you can of course adapt the collector script to talk to inf
 
 - [SexiGraf](http://www.sexigraf.fr) or any Grafana/Graphite stack
 - [Telegraf](https://github.com/influxdata/telegraf)
-- Python with `json` & `requests` libraries installed
-- Physical Access to the Freebox Server device
+- the following system packages installed : `apt-transport-https ca-certificates curl gnupg-agent software-properties-common`  
+  (not necessary for docker)
+- Python with `json` & `requests` libraries installed.
+- Physical Access to the Freebox Server device.
+- If using docker : docker-compose is suggested.
+
+## Docker
+
+The `docker-compose.env` contains the necessary parameters, covering :
+- freebox monitoring parameters
+- telegraf main configuration with influxdb and/or prometheus output
+- influxdb target db configuration
+- prometheus access configuration
+
+The env file must be linked as `.env` using : `ln -s docker-compose.env .env`
+
+To build the image, simply execute : `docker-compose build`  
+Then start with : `docker-compose up -d `
+
+Notice : the credential/configuration file is set as `/data/.credentials` in the container, with a volume attached to /data.
+
+# Usage
 
 ## Step 1: Register an app with the Freebox device
 
 First thing to do is to register an app, to generate a specific `freebox_app_token`.
 
-Run `python freebox_monitoring.py --register [-e endpoint] [-a My_app_name -i My_app_id -d My_device_name]` to do that.
+Run `python freebox_monitoring.py --register [-e freebox-endpoint]` to do that.
+If running docker,  start the container with `docker-compose up -d` , the registration mode will be triggered by the missing credential file. The state can be seen in the docker logs.
 
-*PS: You can modify the app name/id/device name with -a My_app_name -i My_app_id -d My_device_name (Optional)*
-
-*PS: You can specify the -e endpoint (Freebox name or address) to allow multiple endpoints (Optional)*
+* Notice: You can specify the `-e endpoint` (Freebox name or address) to allow multiple endpoints (Optional)*
+* Notice: When not using docker, to prevent any trouble with future updates, it is heavily suggested to move manually the credential / configuration file,  
+  then add the following parameter to call the script : `--config /path/to/.credentials`
 
 Once you execute this script, you will see something similar to this:
 
@@ -36,6 +57,8 @@ You can check the saved tokens with `python freebox_monitor.py --register-status
 ![register-status](freebox_registration_status.png)
 
 If you need to re-auth you can delete the authorization credentials by removing the file `.credentials` in the directory where `freebox_monitor.py` is.
+For docker, simply remove the `fbmonit_fbm-data` volume, it will be recreated at the next start
+
 
 ## Step 2: Use the script to display freebox statistics information
 
@@ -43,16 +66,18 @@ Once you have your `freebox_app_token`, the process to authenticate happens in 2
 - Fetch the current `challenge`. (basically a random generated string changing over time)
 - Compute a `session password` with the `challenge` and your `freebox_app_token`.
 
-(This avoids sending the token over the network)
+This is done automatically, and will avoid sending the token each over the network.
 
-Then execute it, to make sure it connects and displays information.
+Then execute the script, to make sure it connects and displays information.
 
 ![freebox monitor](freebox_monitor.png)
 
+
 ## Step 3: Stats to get and show
 
-By default it auto adapts beetween FFTH and xDSL, by using a switch indicated (`python freebox_monitor.py 'indicated switch'`) you can get the listed stats.
+By default the script will auto adapt beetween FFTH and xDSL.
 
+Without any extra parameters, the following metrics will be retrieved : 
   * FFTH and xDSL (no switch, default)
     * bytes up/down
     * rate up/down
@@ -67,29 +92,27 @@ By default it auto adapts beetween FFTH and xDSL, by using a switch indicated (`
     * errors: es, hec, crc, ses, fec
     * rate, attenuation, signal noise ratio, max rate
     * G.INP status, corrected and uncorrected
-    
-  * System infos (-H switch)
-    * Fan RPM, temp SW, CPU B, CPU M, Box uptime
-    
-  * Switch status (-S switch)
-    * for each switch port: link mode
-    
-  * Switch ports status (-P switch)
-    * for each switch port: rx/tx bytes rate
 
-## Step 4: Leverage telegraf to call the script and send stats to Graphite
+For more, see the integrated help (or the main readme page), and the full list of [available metrics and tags](output_metrics.md).  
 
-Install telegraf on the SexiGraf appliance.
+When using docker, update the parameter `FB_MONITOR_ARGS` in the `docker-compose.env` file to activate additional metrics.
+
+
+## Step 4: Leverage telegraf to call the script and send stats to InfluxDB
+
+**Installation only when not using Docker**
+
+Install telegraf on the SexiGraf appliance (adjust the version as required).
 
 ```console
-wget https://dl.influxdata.com/telegraf/releases/telegraf_1.0.1_amd64.deb
-dpkg -i telegraf_1.0.1_amd64.deb 
+wget https://repos.influxdata.com/debian/packages/telegraf_1.24.4-1_amd64.deb
+dpkg -i telegraf_1.24.4-1_amd64.deb
 ```
 
-Generate a config file for our plugins `exec` and `graphite`.
+Generate a config file for our plugins `exec` and `influxdb`.
 
 ```console
-telegraf --input-filter exec --output-filter graphite config > /etc/telegraf/telegraf.conf
+telegraf --input-filter exec --output-filter influxdb config > /etc/telegraf/telegraf.conf
 ```
 
 Check & edit the configuration file to make it look as follows:
@@ -99,19 +122,37 @@ Check & edit the configuration file to make it look as follows:
 #                            OUTPUT PLUGINS                                   #
 ###############################################################################
 
-# Configuration for Graphite server to send metrics to
-[[outputs.graphite]]
-  ## TCP endpoint for your graphite instance.
-  ## If multiple endpoints are configured, output will be load balanced.
-  ## Only one of the endpoints will be written to with each iteration.
-  servers = ["localhost:2003"]
-  ## Prefix metrics name
-  prefix = ""
-  ## Graphite output template
-  ## see https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_OUTPUT.md
-  template = "host.tags.measurement.field"
-  ## timeout in seconds for the write connection to graphite
-  timeout = 2
+# Configuration for sending metrics to InfluxDB
+[[outputs.influxdb]]
+  ## The full HTTP or UDP URL for your InfluxDB instance.
+  ##
+  ## Multiple URLs can be specified for a single cluster, only ONE of the
+  ## urls will be written to each interval.
+  urls = ["http://influxdb.domain.tld:8086"]
+
+  ## The target database for metrics; will be created as needed.
+  ## For UDP url endpoint database needs to be configured on server side.
+  database = "freebox"
+
+  ## If true, no CREATE DATABASE queries will be sent.  Set to true when using
+  ## Telegraf with a user without permissions to create databases or when the
+  ## database already exists.
+  skip_database_creation = true
+
+  ## Write consistency (clusters only), can be: "any", "one", "quorum", "all".
+  ## Only takes effect when using HTTP.
+  write_consistency = "any"
+
+  ## Timeout for HTTP messages.
+  timeout = "30s"
+
+  ## HTTP Basic Auth
+  username = "influxdb db user"
+  password = "influxdb db password"
+
+  ## HTTP User-Agent
+  user_agent = "telegraf-fbmonitor"
+
 
 ###############################################################################
 #                            INPUT PLUGINS                                    #
@@ -121,41 +162,36 @@ Check & edit the configuration file to make it look as follows:
 [[inputs.exec]]
   ## Commands array
   command = [
-     "/usr/local/freebox-revolution-monitoring/freebox_monitor.py",
-     "/usr/local/freebox-revolution-monitoring/freebox_monitor.py -e another_freebox_address"
+     "/usr/local/freebox-revolution-monitoring/freebox_monitor.py --config /path/to/file/.credentials --format influxdb --endpoint freebox_custom_address"
   ]
 
   ## Timeout for each command to complete.
-  timeout = "5s"
+  timeout = "15s"
 
   ## Data format to consume.
   ## Each data format has it's own unique set of configuration options, read
   ## more about them here:
   ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
-  data_format = "graphite"
+  data_format = "influx"
 ```
 
 Copy your modified `freebox_monitor.py` script to `/usr/local/freebox-monitoring/`
 
+Adjust the access rights to the credential file to allow Telegraf 
+
+```console
+chgrp telegraf /path/to/file/.credentials
+```
+
+
 Relaunch telegraf and check the logs
 
 ```console
-root@sexigraf:~# tail -f /var/log/telegraf/telegraf.log
-2016/12/11 18:26:30 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675367. Total dropped metrics: 0.
-2016/12/11 18:26:30 Output [graphite] wrote batch of 7 metrics in 165.892µs
-2016/12/11 18:26:40 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675374. Total dropped metrics: 0.
-2016/12/11 18:26:40 Output [graphite] wrote batch of 7 metrics in 169.849µs
-2016/12/11 18:26:50 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675381. Total dropped metrics: 0.
-2016/12/11 18:26:50 Output [graphite] wrote batch of 7 metrics in 183.453µs
-2016/12/11 18:27:00 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675388. Total dropped metrics: 0.
-2016/12/11 18:27:00 Output [graphite] wrote batch of 7 metrics in 156.956µs
-2016/12/11 18:27:10 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675395. Total dropped metrics: 0.
-2016/12/11 18:27:10 Output [graphite] wrote batch of 7 metrics in 170.216µs
-2016/12/11 18:27:20 Output [graphite] buffer fullness: 7 / 10000 metrics. Total gathered metrics: 675402. Total dropped metrics: 0.
-2016/12/11 18:27:20 Output [graphite] wrote batch of 7 metrics in 177.338µs
+tail -f /var/log/telegraf/telegraf.log
 ```
 
-If the output is similar to this, you should be good to go and build your own dashboards in SexiGraf.
+As long as the output is empty, telegraf did not encounter any error.  
+You should be good to go and build your own dashboards in SexiGraf.
 
 Here is a 2 day view of the download/upload stats.
 

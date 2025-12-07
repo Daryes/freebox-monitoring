@@ -1,9 +1,28 @@
 ﻿# freebox-monitoring changelog
 
-## v0.8.1
 
+## v0.9.0
+* docker: fichiers pour docker-compose et Dockerfile pour la création d'une image
 * ligne de commande :  
-  * nouveau parametre : `--auth-hash-type` permettant de choisir le type d'algorithme pour l'authentification via token. Dépendant de ce que l'API freeboxOS accepte. Par défaut : `sha1`
+  * nouveau parametre : `--api-endpoint-detect-ssl-domain` pour utiliser 'api_domain' et 'https_port' fournis à la connexion initiale afin de déterminer l'accès API en https.  
+  * parametre modifié : `--patch-rate-up-bytes-up` renvoie correctement zéro lorsque la connexion WAN est absente.  
+* API en https : affichage d'une erreur compréhensible en cas d'absence du fichier local de certificat.  
+* metriques vpnclient : correction d'un plantage lorsque le service est désactivé.  
+* correction enregistrement : parametre `--endpoint` était ignoré.
+* correction enregistrement : erreur occasionnelle sur une section API absente dans le fichier credentials.
+* correction enregistrement : anomalie sur le type d'acces au fichier credential devenu bloquant des versions récentes de Python.
+* corrections de certains descriptifs de paramètres dans l'aide intégrée et messages.  
+* refonte interne de la collecte de metriques déplacée dans des fonctions dédiées pour réduire les interférences.  
+* réorganisation interne de certaines fonctions + documentation.  
+* le fichier credentials est créé avec les droits `750`. Les fichiers existants ne sont pas ajustés.
+* documentation : page d'installation mise à jour pour docker
+* documentation : page d'installation indiquant la configuration par defaut pour influxdb au lieu de graphite
+* CI : ajout de hadolint pour tests docker
+
+
+## v0.8.1
+* ligne de commande :  
+  * nouveau parametre : `--auth-hash-type` permettant de choisir le type d'algorithme pour l'authentification via token. Dépendant de ce que l'API freeboxOS accepte. Par défaut : `sha1`  
   * parametre modifié: `--patch-rate-up-bytes-up` utilise a la place d'une formule incomplete les metriques `rx_bytes_rate` et `rx_good_bytes` du switch.  
     Requiert que la freebox n'ait qu'un seul branchement sur le LAN uniquement pour l'acces internet. Les autres ports ne doivent pas être utilisés pour le traffic LAN.  
 * correction pour éviter un message de type Traceback dans le cas d'une execution sans configuration établie ou inaccessible.  

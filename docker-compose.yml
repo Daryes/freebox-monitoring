@@ -1,0 +1,22 @@
+# Freebox monitoring using telegraf
+
+services:
+  telegraf-freebox:
+    image: custom/freebox-monitoring
+    container_name: freebox-monitoring
+    hostname: freebox-monitoring
+    environment:
+      - TZ=Europe/Paris
+    env_file: docker-compose.env
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    pull_policy: never
+    ports:
+      - "${DOCKER_HOST_IP:-127.0.0.1}:${DOCKER_HOST_PORT:-9273}:9273"
+    volumes:
+      - fbm-data:/data
+
+
+volumes:
+  fbm-data:

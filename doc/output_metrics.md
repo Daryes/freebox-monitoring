@@ -27,7 +27,7 @@
 | freebox | remote_ip, remote_access_port | config_api_remote_access | |
 | freebox | remote_ip, remote_access_port | config_api_allow_token_request | |
 
-## Metrics: connection (FTTH)
+## Metrics: connection (FTTH, automatic)
 
 | Measurements | tags | metrics | comments |
 | - | - | - | - |
@@ -50,7 +50,7 @@
 | freebox | conn_media, sfp_model, sfp_vendor, sfp_serial | sfp_has_signal | |
 
 
-## Metrics: connection (xDSL)
+## Metrics: connection (xDSL, automatic)
 
 | Measurements | tags | metrics | comments |
 | - | - | - | - |
@@ -67,12 +67,9 @@
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_ses | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_fec | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_maxrate | |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_tx | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_c | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_uc | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_tx | v5+ api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_c | v5+ api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_uc | v5+ api only |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_tx | |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_c | |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_up_rtx_uc | |
 | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_es | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_attn | |
@@ -83,12 +80,9 @@
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_ses | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_fec | |
 | freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_maxrate | |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_tx | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_c | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_uc | older api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_tx | v5+ api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_c | v5+ api only |
-| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_uc | v5+ api only |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_tx | |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_c | |
+| freebox | conn_media, xdsl_status, xdsl_modulation, xdsl_protocol | xdsl_down_rtx_uc | |
 
 
 ## Metrics: parameter status-sys
@@ -103,13 +97,13 @@
 | freebox | hw_firmware, hw_serial, hw_mac, hw_model_pretty, hw_model, net_operator | minfo_internal_hdd_size | |
 | |
 | freebox | fan, fan_name | sys_fan_rpm | v8+ api only |
-| freebox | sensor, sensor_name | sys_temp | v8+ api only |
+| freebox | sensor, sensor_name | sys_temp | v8+ api only<br/>sensor_name will specify either switch, CPU A, CPU B |
 | freebox | | sys_fan_count | v8+ api only |
 | freebox | | sys_temp_count | v8+ api only |
-| freebox | sensor, sensor_name | sys_fan_rpm | older api only |
-| freebox | sensor, sensor_name | sys_temp_sw | older api only |
-| freebox | sensor, sensor_name | sys_temp_cpub | older api only |
-| freebox | sensor, sensor_name | sys_temp_cpum | older api only |
+| freebox | sensor=main, sensor_name=main | sys_fan_rpm | older api only |
+| freebox | sensor=main, sensor_name=main | sys_temp_sw | older api only |
+| freebox | sensor=main, sensor_name=main | sys_temp_cpub | older api only |
+| freebox | sensor=main, sensor_name=main | sys_temp_cpum | older api only |
 
 
 ## Metrics: parameter status-call
@@ -204,6 +198,8 @@
 
 | Measurements | tags | metrics | comments |
 | - | - | - | - |
+| freebox_switch | | switch_port_count | |
+| |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_link | |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_duplex | |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_speed | |
@@ -212,10 +208,7 @@
 | freebox_switch | switch_port, switch_mode, switch_name | switch_err_packets | |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_discard_packets | |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_collisions | |
-| |
 | freebox_switch | switch_port, switch_mode, switch_name | switch_client_count | |
-| |
-| freebox_switch | | switch_port_count | |
 | |
 | freebox_switch | switch_port, mac, hostname | client_last_seen | |
 
