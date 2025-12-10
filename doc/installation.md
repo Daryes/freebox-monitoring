@@ -24,10 +24,11 @@ The `docker-compose.env` contains the necessary parameters, covering :
 
 The env file must be linked as `.env` using : `ln -s docker-compose.env .env`
 
-To build the image, simply execute : `docker-compose build`  
-Then start with : `docker-compose up -d `
+The docker image must be build, with the standard command : `docker-compose build`  
+Then start the container with : `docker-compose up -d `
 
-Notice : the credential/configuration file is set as `/data/.credentials` in the container, with a volume attached to /data.
+Notice : the credential/configuration file is set as `/data/.credentials` in the container, with a volume attached to /data.  
+Also, mind the `pull_policy` active in the docker-compose.yml file, which will have to be removed when using a private image registry.
 
 # Usage
 
