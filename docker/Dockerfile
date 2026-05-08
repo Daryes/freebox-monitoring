@@ -1,5 +1,10 @@
 # versions: https://hub.docker.com/_/telegraf
 FROM telegraf:1.27.4
+LABEL org.opencontainers.image.title="freebox-monitoring"
+LABEL org.opencontainers.image.description="Simple Freebox Monitoring with API endpoint, version and ssl autodetection."
+LABEL org.opencontainers.image.url="https://github.com/Daryes/freebox-monitoring"
+LABEL org.opencontainers.image.licenses="MIT"
+
 
 ENV TELEGRAF_AGENT_INTERVAL=1m
 ENV TELEGRAF_SCRIPT_TIMEOUT=15s

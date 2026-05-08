@@ -1,61 +1,74 @@
 # Freebox-exporter Telegraf/InfluxDB
-Also available on Docker-Hub (https://hub.docker.com/r/uzurka/freebox-telegraf)  
-This work is based on Telegraf Docker image (https://hub.docker.com/_/telegraf),  
-And on Bruno78's tuto about setting this up (https://www.nas-forum.com/forum/topic/66394-tuto-monitorer-sa-freebox-revolution/)
 
-My goal is to be configured only with env variables.  
-The entrypoint checks for the presence of the ``/usr/local/py/.credentials`` file. If the file is not present, it will automatically start the registration of the app on the freebox.  
-In case of this registration fails, run ``docker exec -it container_name rm /usr/local/py/.credentials`` and restart the container to rerun the registration
+Also available on Docker-Hub : (https://hub.docker.com/r/uzurka/freebox-telegraf)  
+This work is based on [Telegraf Docker image](https://hub.docker.com/_/telegraf),  
+on Bruno78's tuto about [setting this up](https://www.nas-forum.com/forum/topic/66394-tuto-monitorer-sa-freebox-revolution/),  
+and [Uzurka](https://www.uzurka.fr/) initial Docker image.
 
-#### Here's an exemple of what you can get using this container into grafana : 
-![grafana](https://download.uzurka.fr/graf.png)
+The goal is to have the container configured only with env variables.  
+The entrypoint checks for the presence of the `/data/.credentials` file (default location set by `FB_MONITOR_CRED_FILE`).  
+If the file is not present, it will automatically start the registration of the app on the freebox.  
+In case of this registration failing, run `docker exec -it container_name rm /data/.credentials` and restart the container to relaunch the registration.
+
 
 ## Available Architectures
+The supported architectures are from [the image for Telegraf](https://hub.docker.com/_/telegraf)
 - amd64
 - arm64 (aarch64)
 - armv7 (arm)
 
-## Common usage
-Download docker-compose.yml file and edit it with your informations, then run ``docker-compose up -d``
+
+## Usage
+
+### Build the image
+Download or clone the repo, and run `docker-compose build`
+
+### Common usage
+As long the image is available locally, the repo it not required, only the 2 `docker-compose.*` files are.  
+Edit the `docker-compose.env` to set the desired configuration.  
+Also, the env file must be linked as `.env` using : `ln -s docker-compose.env .env`
+
+When done, run `docker-compose up -d`
+
+Notice : the credential/configuration file is set as `/data/.credentials` in the container, with a volume attached to /data.  
+Also, mind the `pull_policy` active in the docker-compose.yml file, which will have to be removed when using a private image registry.
+
 
 ## Configuration
 
 ### Exposed Ports
+- 9273 Prometheus
 
-- 8125 StatsD
-- 8092 UDP
-- 8094 TCP  
 
 ### Environment variables
-| Environment variable            | Exemple                                 | Usage                                                                                                                                                                                 |
-|---------------------------------|-----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| TZ                              | CET                                     | Set your TimeZone into the container                                                                                                                                                  |
-| INFLUXDB_URL                    | http://influxdb_container_hostname:port | Set the InfluxDB URL so the container can write metrics into it                                                                                                                       |
-| INFLUXDB_DATABASE               | Freebox                                 | The name of the database Telegraf will write on                                                                                                                                       |
-| INFLUXDB_SKIP_DATABASE_CREATION | True/False                              | True : The database will not attempt to be created by the telegraf container False : The database will be created by the telegraf container, using USERNAME & PASSWORD provided below |
-| INFLUXDB_USERNAME               | freebox                                 | Username for the InfluxDB database                                                                                                                                                    |
-| INFLUXDB_PASSWORD               | MyStrongP@ssw0rd!                       | Password used for the InfluxDB database                                                                                                                                               |
-| ARGS                            | SPHDIWX4                                | See below                                                                                                                                                                             |
-| TELEGRAF_AGENT_INTERVAL                            | 10s                                |defaults to 10s|
-| TELEGRAF_SCRIPT_TIMEOUT                            | 5s                                |defaults to 5s|
-### Arguments for freebox-exporter python script
-This env is quite tricky, as i didn't found another way to get it variabilised, this is just the arguments used for executing the script into telegraf configuration.  
-Here's the script.py -h, which tells you which arg is used for :  
-| Argument | Description                                   |
-|----------|-----------------------------------------------|
-| S        | Get and show switch status                    |
-| P        | Get and show switch ports stats               |
-| H        | Get and show system status                    |
-| D        | Get and show internal disk usage              |
-| L        | Get and show LAN config                       |
-| W        | Get and show wifi usage                       |
-| I        | Get and show lan interfaces                   |
-| X        | Get and show interfaces hosts                 |
-| Y        | Get and show static dhcp                      |
-| Z        | Get and show dynamic dhcp                     |
-| 4        | Get and show 4G/lte xdsl aggregation counters |
 
-The ARGS env come in the telegraf.conf rigt after the command ``/usr/local/py/freebox-monit.py -``, just select metrics you want and add choosen letters to the ARGS var
+They are documented in the `docker-compose.env` file.  
+You will want to change the following settings : 
+- FB_MONITOR_ARGS : the metrics to collect from the Freebox, see the next section for more informations.
+- TELEGRAF_AGENT_INTERVAL : the collect frequency. The Freebox can have some difficulties to handle a lower value than "10s"
+- FB_TELEGRAF_OUTPUT : the output plugin, either "influx" or "prometheus" or "influx:prometheus" for both
+
+#### For influx :
+- INFLUXDB_URL : the InfluxDB server url and port
+- INFLUXDB_DATABASE : the database name
+- INFLUXDB_USERNAME & INFLUXDB_PASSWORD : the user/password for accessing the DB. It must have write access.
+
+#### For prometheus :
+- DOCKER_HOST_IP : change it to `0.0.0.0` to allow an external access. The default is set to localhost.
+- PROMETHEUS_BASIC_USERNAME & PROMETHEUS_BASIC_PASSWORD : the user/password known by the Prometheus server to access Telegraf
+- PROMETHEUS_IP_RANGE : IP addresses and/or ranges allowed to access Telegraf. The default allows any IP address.
+
+
+### Arguments for freebox-exporter python script
+
+The environment variable `FB_MONITOR_ARGS` allows to reuse any parameter for the script `freebox_monitor.py`  
+See the "Command-line arguments" section in the [readme](../README.md)
+
+Be mindful when using quotes, while they should work, having multiple variable interpolations can lead to unexpected results.  
+When possible, prefer single-quotes instead of doubles.
+
+
+
 ## Sources
 - https://www.nas-forum.com/forum/topic/66394-tuto-monitorer-sa-freebox-revolution/
 - https://hub.docker.com/r/repobazireinformatique/freebox-telegraf
