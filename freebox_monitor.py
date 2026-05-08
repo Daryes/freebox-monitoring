@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # coding: latin-1  # pylint: disable=C0103,C0111,C2503,W0621
 from __future__ import print_function
 
@@ -357,7 +357,7 @@ def get_connection_config(sHeaders):
                         "disabled": 0,
                         "direct_media": 1,
                         "any_media": 2
-                    }
+                        }
     # TODO: also add "sip_alg" as a tag
     my_data['config_sip_alg'] = CONVERT_SIP_ALG.get( json_raw.get('sip_alg', "none"), 999)
 
@@ -478,7 +478,7 @@ def get_conn_xdsl_status(sHeaders, sConnectionMedia):
                                 "msg_exchange": 4,   # synchronizing step 4/4
                                 "showtime": 5,       # ready
                                 "disabled": -1       # disabled
-                            }
+                                }
         my_data['xdsl_status'] = CONVERT_XDSL_STATUS.get( json_raw['status']['status'], 999)    # set to 999 for unknown state
 
         for sDir in ['down', 'up']:
@@ -681,7 +681,7 @@ def get_disk_stats(sHeaders):
         CONVERT_DISK_STATE = { "error": 99,
                                "enabled": 1,
                                "disabled": 0
-                            }
+                               }
         my_data['disk_state'] = CONVERT_DISK_STATE.get( d['state'], 0)  # default to 0 for unknown state
 
         my_data['disk_write_error'] = d.get('write_error_requests', 0)  # can be missing
@@ -761,7 +761,7 @@ def get_lan_browser_interfaces(sHeaders):
                     OUTPUT_DATA_FINAL['lan_browser_client_%s' % str(i) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
-# used by get_lan_browser_interfaces()
+# called by get_lan_browser_interfaces()
 def get_lan_browser_iface_hosts(sHeaders, iface):
     api_url = '%s/lan/browser/%s/' % (ENDPOINT, iface)
     return get_request_api_url_result(api_url, sHeaders)
@@ -882,7 +882,7 @@ def get_system_config(sHeaders):    # pylint: disable=too-many-statements
         OUTPUT_DATA_FINAL['system_sensors_temp_count'] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
-# used by get_system_config()
+# called by get_system_config()
 def get_system_model_api5():
     # the model is on the "/api_version" path which is public
     api_url = 'http://%s/api_version' % (ENDPOINT_HOST)
@@ -975,7 +975,7 @@ def get_switch_status(sHeaders, bSwitchPortsGetStats = 0):      # pylint: disabl
         OUTPUT_DATA_FINAL['connection']['data']['bytes_up'] = PATCH_FIX_RATE_UP_BYTES_UP_bytesup
 
 
-# used by get_switch_status() for each network port
+# called by get_switch_status() for each network port
 def get_switch_port_stats(sHeaders, port):
     api_url = '%s/switch/port/%s/stats' % (ENDPOINT, port)
     return get_request_api_url_result(api_url, sHeaders)
@@ -1047,7 +1047,7 @@ def get_vpn_servers(sHeaders):
 
         CONVERT_VPNSRV_STATE = { "error": 99,
                                  "started": 1
-                               }
+                                 }
         my_data['vpnsrv_state'] = CONVERT_VPNSRV_STATE.get( i['state'], 0)  # default to 0 for unknown state
         my_data['vpnsrv_connection_count'] = i['connection_count']
         my_data['vpnsrv_auth_connection_count'] = i['auth_connection_count']
@@ -1187,7 +1187,7 @@ def get_vpn_integrated_client_status(sHeaders):
                               "protocol": 9,
                               "remote_terminated": 10,
                               "remote_disconnect": 11
-                            }
+                              }
     my_data['vpnconn_last_error'] = CONVERT_VPNCONN_ERROR.get( json_raw['last_error'], 999)
 
     my_tags['last_error_desc'] = json_raw['last_error']
@@ -1265,9 +1265,10 @@ def do_format_for_output_tags(sOutputType, aTagList):
         if sOutputType == "influxdb" and isinstance(sTagValue, str):
             # spaces must be escaped for influx v1 as " in a tag name or value are read as a litteral
             sTagValue = sTagValue.replace(' ', '\ ')        # pylint: disable=anomalous-backslash-in-string  # noqa: W605
+
         # Graphite has no requirement
 
-        # as the tags are following the measurement, the result must start with the usual separator (, or ;)
+        # Given the measurement is handled elsewhere, the usual separator (, or ;) must also be present at the start of the result
         sRet = sRet + sSeparator + sTagName + "=" + str(sTagValue)
     return sRet
 
@@ -1285,7 +1286,7 @@ def do_output_metrics(sOutputFormat = "influxdb"):
         # timestamp is not required for influxdb
 
         # Output the information - format is : measurement_measure,tag=name,tag=name metric=value,metric=value time
-        # each entry is in the form : {'tags': my_tags{}, 'data': my_data{}}
+        # each data item is in the form : {'tags': my_tags{}, 'data': my_data{}}
         for x in OUTPUT_DATA_FINAL:        # pylint: disable=consider-using-dict-items
             my_measure = OUTPUT_DATA_FINAL[x].get('measure', "")
             my_tags = OUTPUT_DATA_FINAL[x].get('tags', {})
@@ -1305,7 +1306,7 @@ def do_output_metrics(sOutputFormat = "influxdb"):
         nTimestamp = int(time.time())
 
         # Output the information - format is : measurement.measure.metric;tag=name;tag=name value time
-        # each entry is in the form : {'tags': my_tags{}, 'data': my_data{}}
+        # each data item is in the form : {'tags': my_tags{}, 'data': my_data{}}
         for x in OUTPUT_DATA_FINAL:        # pylint: disable=consider-using-dict-items
             my_measure = OUTPUT_DATA_FINAL[x].get('measure', "")
             my_tags = OUTPUT_DATA_FINAL[x].get('tags', {})
@@ -1361,7 +1362,7 @@ def write_auth(sConfigFile, auth_infos):
     with open(sConfigFile, "tw", encoding='latin-1') as authFile:
         f.write(authFile)
 
-    # owner=rw, group=r
+    # adjust the access mode of the config file to : owner=rw, group=r
     os.chmod(sConfigFile, 0o640 )
 
 
@@ -1423,12 +1424,12 @@ def parserInitWithArguments():
     oParser.add_argument('-s', '--register-status', dest='status', action='store_true', help="Get the registration status")
     oParser.add_argument('-f', '--format', dest='format', choices=['graphite', 'influxdb'], default='graphite', help="Specify output format between 'graphite' and 'influxdb'. Default is: graphite")
     oParser.add_argument('-e', '--endpoint', dest='endpoint', metavar='target-box', default=ENDPOINT_HOST, help="Specify the dns or ip of the box API endpoint. Default is: " + ENDPOINT_HOST)    # pylint: disable=line-too-long # noqa C0301
-    oParser.add_argument('--auth-hash-type', dest='endpoint_auth_hash_type', metavar='sha1|sha256|sha3_256|...', default=ENDPOINT_AUTH_HASH, help="Select the hash algorithm used when opening a session at the challenge step. Refer to hashlib documentation and the freebox API object SessionStart from /login/authorize for the supported types. Default is: " + ENDPOINT_AUTH_HASH)    # pylint: disable=line-too-long # noqa C0301
+    oParser.add_argument('--auth-hash-type', dest='endpoint_auth_hash_type', metavar='sha1|sha256|sha3_256|...', default=ENDPOINT_AUTH_HASH, help="Select the hash algorithm used when opening a session at the challenge step. Refer to hashlib documentation and the freebox API object SessionStart from /login/authorize for the supported types. \nDefault is: " + ENDPOINT_AUTH_HASH)    # pylint: disable=line-too-long # noqa C0301
     oParser.add_argument('--api-endpoint-detect-force', dest='endpoint_detect_force', action='store_true', help="Ignore the cache and force the detection of the api capabilities and version from the endpoint target. Allow some overrides.")    # pylint: disable=line-too-long # noqa C0301
-    oParser.add_argument('--api-endpoint-detect-ssl-domain', dest='endpoint_detect_domain_ssl', action='store_true', help="Use 'api_domain' and 'https_port' from the API response to detect the https URL. Not using this parameter will keep for SSL the url : https://" + ENDPOINT_HOST)    # pylint: disable=line-too-long # noqa C0301
+    oParser.add_argument('--api-endpoint-detect-ssl-domain', dest='endpoint_detect_domain_ssl', action='store_true', help="Use 'api_domain' and 'https_port' from the API response to detect the https URL. \nNot using this parameter will keep for SSL the url : https://" + ENDPOINT_HOST)    # pylint: disable=line-too-long # noqa C0301
     oParser.add_argument('--api-version-force', dest='endpoint_api_force_major', metavar='version_major', default='', help="Override the API major version. Must be used with either '--register' or '--api-endpoint-detect-force'")    # pylint: disable=line-too-long # noqa C0301
     oParser.add_argument('--ssl-no-verify', dest='ssl_verify', action='store_false', help="Disable the certificate validity test on ssl connections")
-    oParser.add_argument('--ssl-ca-bundle-file', dest='ssl_ca_bundle_file', metavar='/path/to/file.pem', default=SSL_CUSTOM_CA_BUNDLE_FILE, help="Full path to the custom ssl CA bundle file in PEM format. Both the root and intermediate certs must be in the bundle. Default is: " + SSL_CUSTOM_CA_BUNDLE_FILE)    # pylint: disable=line-too-long # noqa C0301
+    oParser.add_argument('--ssl-ca-bundle-file', dest='ssl_ca_bundle_file', metavar='/path/to/file.pem', default=SSL_CUSTOM_CA_BUNDLE_FILE, help="Full path to the custom ssl CA bundle file in PEM format. Both the root and intermediate certs must be in the bundle. \nDefault is: " + SSL_CUSTOM_CA_BUNDLE_FILE)    # pylint: disable=line-too-long # noqa C0301
     oParser.add_argument('-v', '--version', dest='version', action='store_true', help="Show the version and exit")
 
     oParser.add_argument('-C', '--status-call', dest='status_call', action='store_true', help="Get the phone call logs and history")
@@ -1437,15 +1438,15 @@ def parserInitWithArguments():
     oParser.add_argument('-B', '--status-lan-browser', dest='status_lanbrowser', action='store_true', help="Get and show the hosts on the local network with the lan browser")
     oParser.add_argument('-L', '--status-lte', dest='status_lte', action='store_true', help="Get and show 4G/LTE aggregation status")
     oParser.add_argument('-H', '--status-sys', dest='status_sys', action='store_true', help="Get and show system status")
-    oParser.add_argument('-P', '--status-ports', dest='status_ports', action='store_true', help="DEPRECATED: has no effect, integrated into --status-switch and kept for compatibility")
     oParser.add_argument('-S', '--status-switch', dest='status_switch', action='store_true', help="Get and show the switch and ports status")
+    oParser.add_argument('-P', '--status-ports', dest='status_ports', action='store_true', help="DEPRECATED: has no effect, integrated into --status-switch and kept for compatibility")
     oParser.add_argument('-M', '--status-virtualmachines', dest='status_virtualmachine', action='store_true', help="Get and show the virtual machines status")
     oParser.add_argument('-V', '--status-vpnsrv', dest='status_vpnsrv', action='store_true', help="Get and show the VPN Servers status")
     oParser.add_argument('-Z', '--status-vpnclient', dest='status_vpnclient', action='store_true', help="Get and show the integrated VPN client status")
     oParser.add_argument('-W', '--status-wifi', dest='status_wifi', action='store_true', help="Get and show the Wifi status")
 
     # PATCH_FIX_RATE_UP_BYTES_UP
-    oParser.add_argument('--patch-rate-up-bytes-up', dest='patch_rate_up_bytes_up', action='store_true', help="Fix the rate_up & bytes_up metrics which are cumulated with their *_down counterpart since 10/2024. See task 40445 for more information.\nThis requires the '--status-switch' parameter to be activated, and the freebox switch not used for LAN traffic aside for internet access")    # pylint: disable=line-too-long # noqa C0301
+    oParser.add_argument('--patch-rate-up-bytes-up', dest='patch_rate_up_bytes_up', action='store_true', help="Fix the rate_up & bytes_up metrics which are cumulated with their *_down counterpart since 10/2024. See task 40445 for more information.\nThis requires the '--status-switch' parameter to be activated, and the freebox switch not used for LAN traffic, but only for internet access")    # pylint: disable=line-too-long # noqa C0301
 
     return oParser
 
