@@ -1,5 +1,17 @@
 ﻿# freebox-monitoring changelog
 
+## v0.9.1
+* Mise à jour pour API v16
+  * metriques call : gestion du parametre `line_id` absent (supposé pour le cas d'une seule ligne présente)
+* correction des metriques `lan` / `lanhost` : les informations des IP pouvaient être absentes et causer une erreur, ou etre ecrasées
+* metriques `lan` : nouvelle mesures `lanhost_ipv4_count` et `lanhost_ipv6_count` indiquant le nombre d'IP. 
+  Permet de suivre des appareils perdant souvent la connexion.
+* correction de la gestion interne de plusieurs métriques pouvant dans de rares cas perdre des informations lors de répétitions
+* docker: 
+  * mise à jour de la documentation
+  * ajout de labels `org.opencontainers` dans la création de l'image
+
+
 
 ## v0.9.0
 * docker: fichiers pour docker-compose et Dockerfile pour la création d'une image

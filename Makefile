@@ -68,4 +68,9 @@ test-syntax-5-trivy: ## run trivy - syntax : make test-syntax-5-trivy [ REPORT_D
 	@trivy-offline.sh fs --exit-code 0 --format json  --output $(REPORT_DIR)/trivy.json .
 
 
+test-unit-0-version-help: ## simply print the integrated help and version
+	@python3 -- freebox_monitor.py --version
+	@python3 -- freebox_monitor.py --help
+	@echo "ignore" > $(REPORT_DIR)/$(JENKINS_WRNG)
+
 # vim: noexpandtab filetype=make

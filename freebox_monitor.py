@@ -30,13 +30,13 @@ else:
 APP_ID = "fr.freebox.seximonitor"
 APP_NAME = "SexiMonitor"
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.9.1"
 
 # max api and firmware tested upon
 # bugs : SSL is not supported if the box has no WAN connection - might be related to using an external domain, but the box itself can still do ssl
-# bugs : API v7 mix rate_up and bytes_up with rate_down/bytes_down => task #40445
-APP_TESTED_MAX_API = "15"
-APP_TESTED_MAX_FIRMWARE = "4.9.13"
+# bugs : API v7+ mix rate_up and bytes_up values with rate_down and bytes_down resulting in wrong _down numbers => task #40445
+APP_TESTED_MAX_API = "16"
+APP_TESTED_MAX_FIRMWARE = "4.12.1"
 
 # variables & constants -----------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -45,7 +45,7 @@ CONFIG_FILE = os.path.join( SCRIPT_DIR, ".credentials")
 
 ENDPOINT_HOST = "mafreebox.freebox.fr"
 ENDPOINT_PORT = 80
-ENDPOINT_SSL = 0
+ENDPOINT_SSL = 0    # set to 1 when ssl is returned as active by the box api
 
 ENDPOINT_FAILSAFE = "http://mafreebox.freebox.fr/api/v4"
 ENDPOINT_REQUEST_TIMEOUT = 5
@@ -320,8 +320,10 @@ def get_call_stats(sHeaders):
         return
 
     my_measure = "call"
+    nPosI = 0
     for i in json_raw:
         my_data = {}; my_tags = {}
+        nPosI += 1
 
         my_data['call_duration'] = i['duration']  # in secs
         my_data['call_datetime'] = i['datetime']  # unix timestamp
@@ -331,10 +333,12 @@ def get_call_stats(sHeaders):
         my_tags['call_number'] = i['number']
         my_tags['call_name'] = i['name']
         my_tags['call_type'] = i['type']
-        my_tags['call_line_id'] = i['line_id']
+        if 'line_id' in i:                  # removed in api v16 (when only a single line is present ?) - first line is id=0
+            my_tags['call_line_id'] = i['line_id']
+
         my_tags['call_contact_id'] = i['contact_id']  # also as a tag
 
-        OUTPUT_DATA_FINAL['call_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['call_%s' % str(nPosI)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # Generic connection config ---------------------------------------------------
@@ -566,7 +570,7 @@ def get_conn_lte_status(sHeaders):
             my_band_data['lte_rband_rssi'] = sBand['rssi']
 
             my_band_tags['band'] = sBand['band']  # should be a number
-            OUTPUT_DATA_FINAL['conn_lte_band_%s' % str(sBand)] = {'measure': my_measure, 'tags': my_band_tags, 'data': my_band_data}
+            OUTPUT_DATA_FINAL['conn_lte_band_%s' % str(sBand['band']) ] = {'measure': my_measure, 'tags': my_band_tags, 'data': my_band_data}
 
 
     if 'sim' in json_raw:
@@ -624,6 +628,7 @@ def get_dhcp_dynamic(sHeaders):
     my_measure = "dhcp"
     for i in json_raw:
         my_data = {}; my_tags = {}
+        nLeaseCount += 1
 
         # my_data['dhcp_lease_ip'] = i['ip']  # should be set only as a tag
         my_data['dhcp_lease_static'] = 1 if i['is_static'] else 0    # no need for _dhcp_static with this metric
@@ -641,8 +646,7 @@ def get_dhcp_dynamic(sHeaders):
         my_tags['client_hostname'] = i['hostname']
         my_tags['client_primary_name'] = i['host']['primary_name']
 
-        OUTPUT_DATA_FINAL['dhcp_dynlease_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
-        nLeaseCount += 1
+        OUTPUT_DATA_FINAL['dhcp_dynlease_%s' % str(nLeaseCount)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
     # add the lease count
     my_data = {}; my_tags = {}
@@ -692,10 +696,12 @@ def get_disk_stats(sHeaders):
         my_tags['hdd_serial'] = d['serial']
         my_tags['hdd_table_type'] = d['table_type']
 
-        OUTPUT_DATA_FINAL['disk_%s' % str(d)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['disk_%s' % str(d['id'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
+        nPosP = 0
         for p in d.get('partitions'):
             my_data = {}; my_tags = {}
+            nPosP += 1
 
             my_data['diskfs_total_bytes'] =  p['total_bytes']
             my_data['diskfs_used_bytes'] =  p['used_bytes']
@@ -712,7 +718,7 @@ def get_disk_stats(sHeaders):
             except:             # pylint: disable=bare-except  # noqa: E722
                 my_tags['partition_path'] = 'unknown'
 
-            OUTPUT_DATA_FINAL['disk_%s_part_%s' % (str(d), str(p)) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+            OUTPUT_DATA_FINAL['disk_%s_part_%s' % (str(d['id']), str(nPosP)) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # Lan Browser -------------------------------------------------------------
@@ -729,13 +735,15 @@ def get_lan_browser_interfaces(sHeaders):
 
         my_data['lanhost_count'] = i['host_count']
         my_tags['lan_iface'] = i["name"]
-        OUTPUT_DATA_FINAL['lan_browser_iface_%s' % str(i) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['lan_browser_iface_%s' % i["name"] ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
         if i['host_count'] > 0:
+            nPosC = 0
             json_raw_iface = get_lan_browser_iface_hosts(sHeaders, i["name"])
             if json_raw_iface:
                 for c in json_raw_iface:
                     my_data = {}; my_tags = {}
+                    nPosC += 1
 
                     my_data['lanhost_reachable'] = 1 if c['reachable'] else 0
                     my_data['lanhost_first_activity'] = c['first_activity']
@@ -743,22 +751,35 @@ def get_lan_browser_interfaces(sHeaders):
                     my_data['lanhost_last_time_reachable'] = c['last_time_reachable']
                     my_data['lanhost_persistent'] = 1 if c['persistent'] else 0
 
-                    for lconn in c['l3connectivities']:
-                        # "af" should have unique values
-                        my_data['lanhost_%s_active' % lconn['af']] = 1 if lconn['active'] else 0
-                        # already available in the iface data
-                        # my_data['lanhost_%s_reachable' % lconn['af']] = 1 if lconn['reachable'] else 0
-                        # my_data['lanhost_%s_last_activity' % lconn['af']] = lconn['last_activity']
-                        # my_data['lanhost_%s_last_time_reachable' % lconn['af']] = lconn['last_time_reachable']
-                        my_tags['lan_%s' % lconn['af']] = lconn['addr']
-
                     my_tags['lan_type'] = c['host_type'].lower()
-                    my_tags['lan_primary_name'] = c['primary_name']
+
+                    my_tags['lan_primary_name'] = c['primary_name']     # alt : default_name, domain_name
+                    if len(c['primary_name']) == 0:                     # account for an empty hostname
+                        my_tags['lan_primary_name'] = ' '
                     my_tags['lan_vendor'] = (replace_accents_string( c['vendor_name'] ))[:12]  # limit to 12 chars
                     my_tags['lan_%s' % c['l2ident']['type']] = c['l2ident']['id']  # should be something like: mac_address = ":m:a:c:"
                     my_tags['lan_iface'] = i["name"]
 
-                    OUTPUT_DATA_FINAL['lan_browser_client_%s' % str(i) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+                    if 'l3connectivities' in c:                 # can be missing
+                        for lconn in c['l3connectivities']:
+                            # "af" is used to generated unique values with each protocol (ipv4, ipv6)
+                            my_data['lanhost_%s_active' % lconn['af']] = 1 if lconn['active'] else 0
+                            # already available in the iface data
+                            # my_data['lanhost_%s_reachable' % lconn['af']] = 1 if lconn['reachable'] else 0
+                            # my_data['lanhost_%s_last_activity' % lconn['af']] = lconn['last_activity']
+                            # my_data['lanhost_%s_last_time_reachable' % lconn['af']] = lconn['last_time_reachable']
+                            my_tags['lan_%s' % lconn['af']] = lconn['addr']
+
+                            # TODO: track each l3conn with the time as some clients can have multiple IP for the same protocol due to frequent disconnection
+
+                            # add a count of IP for each protocol
+                            sLcCountKey = "lanhost_%s_count" % lconn['af']
+                            if sLcCountKey in my_data:
+                                my_data[sLcCountKey] += 1
+                            else:
+                                my_data[sLcCountKey] = 1
+
+                    OUTPUT_DATA_FINAL['lan_browser_client_%s' % str(nPosC) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # called by get_lan_browser_interfaces()
@@ -848,14 +869,14 @@ def get_system_config(sHeaders):    # pylint: disable=too-many-statements
         nCount = 0
         for i in json_raw['fans']:
             my_data = {}; my_tags = {}
+            nCount += 1
 
             my_data['sys_fan_rpm'] = i['value']  # rpm
 
             my_tags['fan'] = i['id']
             my_tags['fan_name'] = replace_accents_string( i['name'] )
 
-            OUTPUT_DATA_FINAL['system_sensors_fan_%s' % i] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
-            nCount += 1
+            OUTPUT_DATA_FINAL['system_sensors_fan_%s' % str(nCount)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
         # add the fan count
         my_data = {}; my_tags = {}
@@ -867,14 +888,14 @@ def get_system_config(sHeaders):    # pylint: disable=too-many-statements
         nCount = 0
         for i in json_raw['sensors']:
             my_data = {}; my_tags = {}
+            nCount += 1
 
             my_data['sys_temp'] = i['value']  # Temp degree Celcius
 
             my_tags['sensor'] = i['id']
             my_tags['sensor_name'] = replace_accents_string( i['name'] )
 
-            OUTPUT_DATA_FINAL['system_sensors_temp_%s' % i] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
-            nCount += 1
+            OUTPUT_DATA_FINAL['system_sensors_temp_%s' % str(nCount)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
         # add the sensor count
         my_data = {}; my_tags = {}
@@ -935,18 +956,18 @@ def get_switch_status(sHeaders, bSwitchPortsGetStats = 0):      # pylint: disabl
                 if len( my_tags_client['hostname'] ) == 0:
                     my_tags_client['hostname'] = "unknown"
 
-                OUTPUT_DATA_FINAL['switch_port_mac_client_%s' % m] = {'measure': my_measure, 'tags': my_tags_client, 'data': my_data_client}
+                OUTPUT_DATA_FINAL['switch_port_mac_client_%s' % str(nMacCount)] = {'measure': my_measure, 'tags': my_tags_client, 'data': my_data_client}
 
         # add the client count to the main data
         my_data['switch_client_count'] = nMacCount
-        OUTPUT_DATA_FINAL['switch_%s' % i['id'] ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['switch_%s' % str(i['id']) ] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
         # current port status
         if bSwitchPortsGetStats:
             json_raw_port = get_switch_port_stats(sHeaders, str(i['id']))
             if json_raw_port:
-                my_data_port = {}; my_tags_port = my_tags     # reuse the same tags as the port
+                my_data_port = {}; my_tags_port = my_tags.copy()     # reuse the same tags as the port
 
                 # these metrics exist for both "rx_*" and "tx_*"
                 my_data_port['switch_rx_bytes_rate'] = json_raw_port['rx_bytes_rate']  # bytes/s
@@ -957,7 +978,7 @@ def get_switch_status(sHeaders, bSwitchPortsGetStats = 0):      # pylint: disabl
                 my_data_port['switch_discard_packets'] = json_raw_port['rx_discard_packets']
                 my_data_port['switch_collisions'] = json_raw_port['tx_collisions']
 
-                OUTPUT_DATA_FINAL['switch_port_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags_port, 'data': my_data_port}
+                OUTPUT_DATA_FINAL['switch_port_%s' % str(i['id'])] = {'measure': my_measure, 'tags': my_tags_port, 'data': my_data_port}
 
                 # fix for connection stats - part 1 : WAN rate_up & bytes_up are cumulated with their *_down counterpart - reuse the switch data
                 if PATCH_FIX_RATE_UP_BYTES_UP:
@@ -1030,7 +1051,7 @@ def get_virtualmachines(sHeaders):
         my_tags['vm_mac'] = i['mac']
         my_tags['vm_os'] = i['os']
 
-        OUTPUT_DATA_FINAL['vm_info_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['vm_info_%s' % str(i['id'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # VPN servers -------------------------------------------------------------
@@ -1068,7 +1089,7 @@ def get_vpn_servers(sHeaders):
             my_tags['vpn_ip6_start'] = json_raw_conf.get('ip6_start', '')
             my_tags['vpn_ip6_end'] = json_raw_conf.get('ip6_end', '')
 
-        OUTPUT_DATA_FINAL['vpn_srv_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['vpn_srv_%s' % str(i['name'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # used by get_vpn_servers()
@@ -1101,7 +1122,7 @@ def get_vpn_server_connection(sHeaders):
         my_tags['conn_src_ip'] = i['src_ip']
         my_tags['conn_local_ip'] = i['local_ip']
 
-        OUTPUT_DATA_FINAL['vpn_srv_conn_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['vpn_srv_conn_%s' % str(i['id'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # VPN integrated client : config ------------------------------------------
@@ -1130,7 +1151,7 @@ def get_vpn_integrated_client_config(sHeaders):
             my_tags['ivc_remote_host'] = i['remote_addr']
             my_tags['ivc_remote_port'] = i['remote_port']
 
-        OUTPUT_DATA_FINAL['vpn_client_config_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['vpn_client_config_%s' % str(i['id'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # VPN integrated client : status ------------------------------------------
@@ -1218,7 +1239,7 @@ def get_wifi_ap_stats(sHeaders):
             my_data['wifi_primary_channel'] = i['status']['primary_channel']
             my_data['wifi_secondary_channel'] = i['status']['secondary_channel']
 
-        OUTPUT_DATA_FINAL['wifi_ap_%s' % str(i)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+        OUTPUT_DATA_FINAL['wifi_ap_%s' % str(i['id'])] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
         if i['status']['state'] == "active":
             json_raw_ap = get_wifi_ap_stations(sHeaders, i['id'])
@@ -1239,7 +1260,7 @@ def get_wifi_ap_stats(sHeaders):
                     my_tags['wifi_station'] = s['id']
                     my_tags['wifi_station_bssid'] = s['bssid']
 
-                    OUTPUT_DATA_FINAL['wifi_station_%s' % str(s)] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
+                    OUTPUT_DATA_FINAL['wifi_station_%s_%s' % (str(i['id']), str(s['id']))] = {'measure': my_measure, 'tags': my_tags, 'data': my_data}
 
 
 # used by get_wifi_ap_stats()
@@ -1298,7 +1319,7 @@ def do_output_metrics(sOutputFormat = "influxdb"):
             for m in my_data:
                 if isinstance(my_data[m], str):
                     my_data[m] = "\"" + my_data[m] + "\""
-                # TODO: switch to a single print() for the full "my_data[]" as influxdb accepts multiple metrics for the same tags on the same line
+                # TODO: switch to a single print() for the full "my_data[]" as influxdb accepts multiple metrics for the same tags in the same line
                 print(sOutputMeasurement + sOutputTagsGlobal + sOutputTagsMetric + " " + m + "=" + str(my_data[m]))
 
     else:
